@@ -1,30 +1,26 @@
-"""Free, unattended Eurotrash monitor for a dedicated GitHub repository.
+"""Free cloud monitor. Reads only Eurotrash's official public ticket API.
 
-Uses GitHub's bot notifications. No email passwords or paid services required.
-Reads only Young Vic's public Eurotrash data and never reserves/buys tickets.
+Spektrix Web-mode API documentation:
+https://integrate.spektrix.com/docs/apieventfiltering
+https://integrate.spektrix.com/docs/Availability
+No login, personal credentials, reservations or purchases.
 """
 import base64
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
-import shutil
-import socket
-import subprocess
-import time
 from datetime import datetime, timezone, timedelta
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 SHOW = "https://www.youngvic.org/whats-on/eurotrash/"
-API = "https://www.youngvic.org/api/attendable/v1/instances/?" + urlencode({
-    "limit": "1000",
-    "fields": "title,status,accessible_seating_available,duration,booking_url,start_datetime,end_datetime,notes,event_title,instance_types,access_types,venue,venue_display_name,tags",
-    "order": "start_datetime", "child_of": "111",
-})
+TICKETS = "https://system.spektrix.com/youngvic/api/v3"
+# Verified by the official public API: name EUROTRASH, Main House,
+# starring Kathryn Hunter and Ben Whishaw, 13 Nov 2026–9 Jan 2027.
+EVENT_ID = "10601APSKMRRDLKDGKBKNPNLTDRGCSHLR"
 LONDON = ZoneInfo("Europe/London")
 END = datetime(2027, 1, 10, tzinfo=LONDON)
 STATE_PATH = "monitor-state.json"
@@ -35,7 +31,7 @@ class MonitorError(Exception):
 
 
 def request_json(url, method="GET", data=None, token=None, timeout=40):
-    headers = {"Accept": "application/json", "User-Agent": "EurotrashAvailabilityMonitor/1.0"}
+    headers = {"Accept": "application/json", "User-Agent": "EurotrashAvailabilityMonitor/1.0", "Cache-Control": "no-cache"}
     if token:
         headers.update(Authorization=f"Bearer {token}", **{"X-GitHub-Api-Version": "2022-11-28"})
     if data is not None:
@@ -49,173 +45,121 @@ def request_json(url, method="GET", data=None, token=None, timeout=40):
         raise MonitorError("Source returned a non-JSON page; availability is unknown") from exc
 
 
-def booking_url(value):
-    url = urljoin(SHOW, str(value or ""))
-    parsed = urlparse(url)
-    if not value or parsed.scheme != "https" or not (parsed.hostname or "").endswith(".youngvic.org"):
-        raise MonitorError("Missing or unexpected official booking link")
-    return url
+def date(value):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.replace(tzinfo=LONDON) if parsed.tzinfo is None else parsed
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise MonitorError("Unrecognised official performance date") from exc
+
+
+def count(value):
+    if type(value) is not int or value < 0:
+        raise MonitorError("Missing or invalid seat count")
+    return value
 
 
 def restricted(text):
     return bool(re.search(r"press[\s_-]*night|invitation[\s_-]*only|members?[\s_-]*only|access[\s_-]*only", text, re.I))
 
 
-def parse_api(payload, now):
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or not items or len(items) > 1000:
-        raise MonitorError("Official performance list is empty or invalid")
-    available, total = [], 0
-    for item in items:
-        title = str(item.get("event_title") or item.get("title") or "")
-        if "eurotrash" not in title.lower():
-            raise MonitorError("Performance data does not identify Eurotrash")
-        try:
-            start = datetime.fromisoformat(item["start_datetime"].replace("Z", "+00:00"))
-            if start.tzinfo is None:
-                start = start.replace(tzinfo=LONDON)
-        except (ValueError, KeyError, TypeError) as exc:
-            raise MonitorError("Unrecognised performance date") from exc
-        if start <= now or start >= END:
+def select_event(events):
+    if not isinstance(events, list):
+        raise MonitorError("Official event list is invalid")
+    matches = [e for e in events if e.get("name", "").strip().casefold() == "eurotrash" and e.get("id") == EVENT_ID and e.get("attribute_SupplementaryEvent") is False]
+    if len(matches) != 1:
+        raise MonitorError("Could not verify the Eurotrash production; programmes are excluded")
+    return matches[0]
+
+
+def parse_inventory(instances, inventory, now):
+    """Require matching public instance metadata and explicit availability counts."""
+    rows = inventory.get("data") if isinstance(inventory, dict) else None
+    if not isinstance(instances, list) or not instances or not isinstance(rows, list) or not rows:
+        raise MonitorError("Official performance or availability list is empty")
+    by_id = {}
+    for row in rows:
+        instance_id = row.get("eventInstanceId")
+        if not isinstance(instance_id, str) or instance_id in by_id:
+            raise MonitorError("Invalid or duplicate availability instance")
+        by_id[instance_id] = row
+    candidates, total = [], 0
+    for instance in instances:
+        if instance.get("event", {}).get("id") != EVENT_ID:
+            raise MonitorError("Availability includes a different production")
+        start = date(instance.get("start"))
+        if start <= now or start >= END or instance.get("cancelled") is True:
+            continue
+        if type(instance.get("isOnSale")) is not bool:
+            raise MonitorError("Missing public sale status")
+        if not instance["isOnSale"]:
             continue
         total += 1
-        status = item.get("status")
-        if not isinstance(status, str) or not status:
-            raise MonitorError("Missing ticket status")
-        # These are the exact disabled-status codes used by Young Vic's own
-        # instance-list component. SDO + accessible_seating_available is still
-        # excluded: the remaining seats are reserved for Access customers.
-        if status in {"SDO", "CAN"} or restricted(json.dumps(item.get("instance_types", [])) + str(item.get("notes", ""))):
+        # Priority-booking attributes alone do not show current eligibility.
+        # Check the actual public sale window instead, without authenticating.
+        if date(instance.get("startSellingAtWebUtc")) > now or date(instance.get("stopSellingAtWebUtc")) <= now:
             continue
-        url = booking_url(item.get("booking_url"))
-        available.append({"key": f"{start.isoformat()}|{url}", "when": start.astimezone(LONDON).strftime("%Y-%m-%d %H:%M"), "url": url, "confirmed": False})
+        if restricted(str(instance.get("attribute_PerformanceInformation", ""))):
+            continue
+        instance_id = instance.get("id", "")
+        if not re.fullmatch(r"\d+[A-Z]+", instance_id):
+            raise MonitorError("Invalid official instance ID")
+        row = by_id.get(instance_id)
+        if row is None or date(row.get("start")) != start:
+            raise MonitorError("Availability is missing or has a mismatched date")
+        bands = row.get("availability")
+        if not isinstance(bands, list) or not bands:
+            raise MonitorError("Availability has no price-band counts")
+        available = 0
+        for band in bands:
+            if band.get("status") not in {"Available", "Unavailable"}:
+                raise MonitorError("Unexpected non-public inventory status")
+            seats = count(band.get("count"))
+            if band["status"] == "Available":
+                available += seats
+        if available:
+            numeric_id = re.match(r"\d+", instance_id)[0]
+            # Official iframe documentation specifies the integer ID prefix.
+            url = "https://book.youngvic.org/youngvic/website/ChooseSeats.aspx?" + urlencode({"EventInstanceId": numeric_id, "resize": "true"})
+            candidates.append({"instance_id": instance_id, "key": f"{start.isoformat()}|{url}", "when": start.astimezone(LONDON).strftime("%Y-%m-%d %H:%M"), "url": url})
     if not total:
-        raise MonitorError("No future Eurotrash performances were returned")
-    return {"total": total, "available": available, "source": "official_api"}
+        raise MonitorError("No future public Eurotrash performances were returned")
+    return {"total": total, "candidates": candidates}
 
 
-DOM_READ = r"""
-const root = document.querySelector('#instance-list[data-event-id="111"]');
-return {
- title: document.querySelector('h1')?.textContent || document.title,
- rows: Array.from(root?.querySelectorAll('.c-instance__event-details-item') || []).map(row => ({
-  date: row.closest('.c-instance--event-group')?.querySelector('.c-instance__event-date')?.textContent || '',
-  time: row.querySelector('.c-instance__list-time')?.textContent || '',
-  text: row.textContent || '',
-  disabled: row.querySelector('.c-btn--disabled')?.textContent || '',
-  links: Array.from(row.querySelectorAll('.c-instance__event-booking a[href]')).map(a => ({
-   text:a.textContent || '', url:a.href,
-   disabled:a.getAttribute('aria-disabled') === 'true' || a.classList.contains('c-btn--disabled')
-  }))
- })),
- challenge: /just a moment|verify you are human|access denied/i.test(document.title)
-};
-"""
+def confirm_public_seats(candidate, status):
+    """Exclude wheelchair seats and all eligibility/companion locks.
 
-
-class Browser:
-    """Drive the Chrome/ChromeDriver already supplied by GitHub's Linux image."""
-    def __enter__(self):
-        driver = shutil.which("chromedriver")
-        if not driver:
-            raise MonitorError("Cloud image does not provide ChromeDriver")
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            port = sock.getsockname()[1]
-        self.base = f"http://127.0.0.1:{port}"
-        self.process = subprocess.Popen([driver, f"--port={port}", "--silent"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.session = None
-        for _ in range(50):
-            try:
-                self.call("/status")
-                break
-            except (URLError, OSError):
-                time.sleep(.1)
-        browser_args = ["--no-sandbox", "--disable-dev-shm-usage", "--window-size=1280,1000"]
-        if not os.environ.get("DISPLAY"):
-            browser_args.insert(0, "--headless=new")
-        options = {"args": browser_args}
-        chrome = shutil.which("google-chrome") or shutil.which("google-chrome-stable")
-        if chrome:
-            options["binary"] = chrome
-        result = self.call("/session", "POST", {"capabilities": {"alwaysMatch": {"browserName": "chrome", "goog:chromeOptions": options}}})
-        self.session = result["sessionId"]
-        return self
-
-    def call(self, path, method="GET", data=None):
-        result = request_json(self.base + path, method, data, timeout=55)
-        value = result.get("value")
-        if isinstance(value, dict) and value.get("error"):
-            raise MonitorError("Browser: " + str(value.get("message", value["error"]))[:300])
-        return value
-
-    def navigate(self, url):
-        self.call(f"/session/{self.session}/url", "POST", {"url": url})
-
-    def read(self, script):
-        return self.call(f"/session/{self.session}/execute/sync", "POST", {"script": script, "args": []})
-
-    def __exit__(self, *args):
-        try:
-            if self.session:
-                self.call(f"/session/{self.session}", "DELETE")
-        finally:
-            self.process.terminate()
-            self.process.wait(timeout=10)
-
-
-def parse_dom(data, now):
-    if data.get("challenge"):
-        raise MonitorError("Official site requires human verification; no CAPTCHA was solved")
-    if "eurotrash" not in data.get("title", "").lower() or not data.get("rows"):
-        raise MonitorError("Eurotrash performance list has not loaded")
-    available, total = [], 0
-    months = {"nov": 11, "dec": 12, "jan": 1}
-    for row in data["rows"]:
-        dm = re.search(r"(\d{1,2})\s*(Nov|Dec|Jan)", row.get("date", ""), re.I)
-        tm = re.search(r"(\d{1,2}):(\d{2})\s*(AM|PM)", row.get("time", ""), re.I)
-        if not dm or not tm:
-            raise MonitorError("Performance date/time format changed")
-        month = months[dm[2].lower()]
-        hour = int(tm[1]) % 12 + (12 if tm[3].upper() == "PM" else 0)
-        start = datetime(2027 if month == 1 else 2026, month, int(dm[1]), hour, int(tm[2]), tzinfo=LONDON)
-        if start <= now or start >= END:
-            continue
-        total += 1
-        if re.search(r"sold\s*out|cancelled", row.get("disabled", ""), re.I) or restricted(row.get("text", "")):
-            continue
-        links = [link for link in row.get("links", []) if not link.get("disabled") and not re.search(r"sold\s*out|access|member|waiting", link.get("text", ""), re.I)]
-        if not links:
-            # SDO + accessible seats has an enabled link labelled Sold Out.
-            if any(re.search(r"sold\s*out|access|member|waiting", link.get("text", ""), re.I) for link in row.get("links", [])):
-                continue
-            raise MonitorError("A performance has no identifiable ticket status")
-        url = booking_url(links[0]["url"])
-        available.append({"key": f"{start.isoformat()}|{url}", "when": start.strftime("%Y-%m-%d %H:%M"), "url": url, "confirmed": False})
-    if not total:
-        raise MonitorError("No future Eurotrash performances were read")
-    return {"total": total, "available": available, "source": "official_browser"}
+    'available' is documented as ordinary purchasable seats, excluding locks,
+    other baskets, reservations and sold seats. Do not add wheelchairAvailable,
+    specialAvailable, lockInfoAvailable or lockInfoSpecialAvailable.
+    """
+    if not isinstance(status, dict):
+        raise MonitorError("Seat confirmation returned invalid data")
+    available = count(status.get("available"))
+    capacity = count(status.get("capacity"))
+    if not capacity or available > capacity:
+        raise MonitorError("Inconsistent seat availability")
+    if not available:
+        return None
+    return dict(candidate, count=available, confirmed=True)
 
 
 def observe(now):
-    try:
-        return parse_api(request_json(API), now)
-    except (MonitorError, HTTPError, URLError, TimeoutError, OSError) as api_error:
-        print("Direct API unavailable; trying the official page in Chrome:", str(api_error)[:180])
-    with Browser() as browser:
-        browser.navigate(SHOW)
-        data = {}
-        for _ in range(30):
-            data = browser.read(DOM_READ)
-            # Give ordinary, automatic page loading time to finish. Never
-            # interact with a CAPTCHA, alter automation fingerprints, or treat
-            # an intermediate verification page as ticket inventory.
-            if data.get("rows") and not data.get("challenge"):
-                return parse_dom(data, now)
-            time.sleep(1)
-        if data.get("challenge"):
-            raise MonitorError("Official site requires human verification")
-    raise MonitorError("Dynamic Eurotrash performance list did not load in time")
+    params = urlencode({"name": "Eurotrash", "instanceStart_from": now.astimezone(LONDON).date().isoformat(), "instanceStart_to": END.date().isoformat()})
+    select_event(request_json(TICKETS + "/events?" + params))
+    date_params = urlencode({"start_from": now.astimezone(LONDON).date().isoformat(), "start_to": END.date().isoformat()})
+    base = TICKETS + "/events/" + EVENT_ID
+    instances = request_json(base + "/instances?" + date_params)
+    inventory = request_json(base + "/availability?" + date_params)
+    result = parse_inventory(instances, inventory, now)
+    available = []
+    for candidate in result["candidates"]:
+        status = request_json(TICKETS + "/instances/" + candidate["instance_id"] + "/status?includeChildPlans=true")
+        item = confirm_public_seats(candidate, status)
+        if item:
+            available.append(item)
+    return {"total": result["total"], "available": available, "source": "official_spektrix_public_web_api"}
 
 
 class GitHub:
@@ -258,10 +202,10 @@ class GitHub:
 
 
 def alert_body(items, now):
-    lines = ["Young Vic 官网的 Eurotrash 场次出现公开购票入口。", "", f"核验时间：{now.astimezone(LONDON):%Y-%m-%d %H:%M:%S}（伦敦时间）", ""]
+    lines = ["Young Vic 官方售票服务已确认 Eurotrash 有普通公开可购座位。", "", f"核验时间：{now.astimezone(LONDON):%Y-%m-%d %H:%M:%S}（伦敦时间）", ""]
     for item in items:
-        lines.append(f"- **{item['when']}（伦敦时间）**：[打开官方购票页]({item['url']})")
-    lines.extend(["", "票价和实际可选座位请在官方售票页核对；余票可能随时被买走。监控只读取公开状态，不会替你订票。"])
+        lines.append(f"- **{item['when']}（伦敦时间）**：核验时 {item['count']} 张普通公开座位；[打开官方购票页]({item['url']})")
+    lines.extend(["", "票价未知，请在官方售票页核对。余票随时可能售出。监控只读取公开状态，不会替你订票。"])
     return "\n".join(lines)
 
 
@@ -287,13 +231,13 @@ def run():
         if fresh:
             fingerprint = hashlib.sha256(json.dumps([i["key"] for i in fresh], sort_keys=True).encode()).hexdigest()[:20]
             episode = str(state.get("episode", 0) + 1)
-            url = gh.notify("【购票入口恢复】Young Vic《Eurotrash》请立即核对余票", alert_body(fresh, now), "eurotrash-availability-" + episode + "-" + fingerprint)
+            url = gh.notify("【放票提醒】Young Vic《Eurotrash》有票了", alert_body(fresh, now), "eurotrash-availability-" + episode + "-" + fingerprint)
             print("Availability notification acknowledged:", url)
             state["episode"] = int(episode)
         if state.get("failure_notice_sent"):
             gh.notify("【监控恢复】Eurotrash 云端查票恢复", f"已重新读取 Eurotrash 官方的 {observation['total']} 场未来演出。\n\n{SHOW}", "eurotrash-recovery-" + str(state.get("failure_episode", 0)))
-        state.update(status="booking_reopened" if items else "sold_out", notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
-        print(json.dumps({"checked_at": stamp, "source": observation["source"], "performances": observation["total"], "bookable_signals": len(items), "status": state["status"]}))
+        state.update(status="available" if items else "sold_out", notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
+        print(json.dumps({"checked_at": stamp, "source": observation["source"], "performances": observation["total"], "confirmed_available_performances": len(items), "status": state["status"]}))
     except Exception as exc:
         count = state.get("consecutive_failures", 0) + 1
         state.update(status="unknown", consecutive_failures=count, last_error=str(exc)[:500])
