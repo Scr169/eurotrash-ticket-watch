@@ -1,4 +1,4 @@
-name: Eurotrash ticket watch
+name: Theatre ticket watch
 
 on:
   schedule:
@@ -7,6 +7,10 @@ on:
     inputs:
       test_notification:
         description: 'Send one clearly labelled setup test notification'
+        type: boolean
+        default: false
+      golden_boy_test_notification:
+        description: 'Test Golden Boy email and official booking-page connectivity'
         type: boolean
         default: false
 
@@ -20,15 +24,26 @@ permissions:
 
 jobs:
   check:
+    # Standard public-repository Linux runner: no paid services or large runners.
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Test both monitors
+        run: python3 -m unittest discover -s tests -v
       - name: Check official public Eurotrash ticket status
         env:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_USER: ${{ github.repository_owner }}
           TEST_NOTIFICATION: ${{ inputs.test_notification }}
         run: python3 monitor.py
+      - name: Check Almeida Golden Boy official availability
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_USER: ${{ github.repository_owner }}
+          TEST_NOTIFICATION: ${{ inputs.golden_boy_test_notification }}
+          VERIFY_BOOKING_PROBE: ${{ inputs.golden_boy_test_notification }}
+        run: xvfb-run -a python3 golden_boy.py
