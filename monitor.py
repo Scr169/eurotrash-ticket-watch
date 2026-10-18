@@ -131,7 +131,10 @@ class Browser:
                 break
             except (URLError, OSError):
                 time.sleep(.1)
-        options = {"args": ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1280,1000"]}
+        browser_args = ["--no-sandbox", "--disable-dev-shm-usage", "--window-size=1280,1000"]
+        if not os.environ.get("DISPLAY"):
+            browser_args.insert(0, "--headless=new")
+        options = {"args": browser_args}
         chrome = shutil.which("google-chrome") or shutil.which("google-chrome-stable")
         if chrome:
             options["binary"] = chrome
@@ -201,13 +204,17 @@ def observe(now):
         print("Direct API unavailable; trying the official page in Chrome:", str(api_error)[:180])
     with Browser() as browser:
         browser.navigate(SHOW)
+        data = {}
         for _ in range(30):
             data = browser.read(DOM_READ)
-            if data.get("challenge"):
-                raise MonitorError("Official site requires human verification")
-            if data.get("rows"):
+            # Give ordinary, automatic page loading time to finish. Never
+            # interact with a CAPTCHA, alter automation fingerprints, or treat
+            # an intermediate verification page as ticket inventory.
+            if data.get("rows") and not data.get("challenge"):
                 return parse_dom(data, now)
             time.sleep(1)
+        if data.get("challenge"):
+            raise MonitorError("Official site requires human verification")
     raise MonitorError("Dynamic Eurotrash performance list did not load in time")
 
 
@@ -244,7 +251,7 @@ class GitHub:
         for issue in self.call("/issues?state=all&per_page=100&sort=created&direction=desc"):
             if marker in (issue.get("body") or ""):
                 return issue["html_url"]
-        result = self.call("/issues", "POST", {"title": title, "body": f"@{self.owner}\n\n{body}\n\n<!-- {marker} -->", "assignees": [self.owner]})
+        result = self.call("/issues", "POST", {"title": title, "body": f"@{self.owner}\n\n{body}\n\n<!-- {marker} -->"})
         if not result.get("id"):
             raise MonitorError("GitHub did not acknowledge the alert")
         return result["html_url"]
