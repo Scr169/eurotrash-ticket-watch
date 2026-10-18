@@ -6,68 +6,103 @@ from unittest.mock import patch
 import monitor
 
 NOW = datetime(2026, 10, 18, tzinfo=timezone.utc)
-ITEM = {
-    "event_title": "Eurotrash", "status": "LAV",
-    "start_datetime": "2026-11-14T19:30:00Z",
-    "booking_url": "https://tickets.youngvic.org/event/example",
-    "instance_types": [], "notes": "",
+ITEM = {"booking_url": "https://book.youngvic.org/youngvic/website/ChooseSeats.aspx?EventInstanceId=50201&resize=true"}
+INSTANCE_ID = "50201AJQJMNKPVNTVBTBMSCMBRSMTGJSS"
+INSTANCE = {
+    "id": INSTANCE_ID, "event": {"id": monitor.EVENT_ID},
+    "start": "2026-11-13T19:30:00", "isOnSale": True,
+    "cancelled": False,
+    "startSellingAtWebUtc": "2026-04-23T10:30:00Z",
+    "stopSellingAtWebUtc": "2026-11-13T19:15:00Z",
+    "attribute_PerformanceInformation": "£12 first preview",
 }
-ROW = {
-    "date": "Sat14 Nov", "time": "7:30 PM", "text": "Main House",
-    "disabled": "", "links": [{"text": "Book Now", "url": ITEM["booking_url"], "disabled": False}],
-}
+INVENTORY = {"data": [{
+    "eventInstanceId": INSTANCE_ID, "start": INSTANCE["start"],
+    "availability": [{"status": "Available", "count": 1}],
+}]}
 
 
 class AvailabilityTests(unittest.TestCase):
-    def api(self, **changes):
-        return monitor.parse_api({"items": [dict(ITEM, **changes)]}, NOW)
+    def inventory(self, **changes):
+        return monitor.parse_inventory([dict(INSTANCE, **changes)], INVENTORY, NOW)
 
-    def dom(self, **changes):
-        return monitor.parse_dom({"title": "Eurotrash", "rows": [dict(ROW, **changes)]}, NOW)
+    def test_event_lookup_excludes_programmes_and_other_shows(self):
+        production = {"name": "EUROTRASH", "id": monitor.EVENT_ID, "attribute_SupplementaryEvent": False}
+        programme = dict(production, name="Eurotrash programme", id="13201ABC", attribute_SupplementaryEvent=True)
+        self.assertEqual(monitor.select_event([programme, production]), production)
+        for events in [[programme], [dict(production, id="OTHER")], [], {}]:
+            with self.subTest(events=events), self.assertRaises(monitor.MonitorError):
+                monitor.select_event(events)
 
-    def test_public_limited_availability_returns_booking_link(self):
-        result = self.api()
-        self.assertEqual(result["available"][0]["when"], "2026-11-14 19:30")
+    def test_public_count_candidate_uses_documented_official_booking_link(self):
+        result = self.inventory()
+        self.assertEqual(result["total"], 1)
+        item = result["candidates"][0]
+        self.assertEqual(item["when"], "2026-11-13 19:30")
+        self.assertEqual(item["url"], ITEM["booking_url"])
+        self.assertNotIn("confirmed", item)
 
-    def test_access_reserved_seats_are_not_a_public_restock(self):
-        self.assertEqual(self.api(status="SDO", accessible_seating_available=True)["available"], [])
+    def test_on_sale_does_not_mean_available(self):
+        inventory = copy.deepcopy(INVENTORY)
+        inventory["data"][0]["availability"][0]["count"] = 0
+        self.assertEqual(monitor.parse_inventory([INSTANCE], inventory, NOW)["candidates"], [])
 
-    def test_cancelled_and_press_night_are_excluded(self):
-        self.assertEqual(self.api(status="CAN")["available"], [])
-        self.assertEqual(self.api(instance_types=[{"slug": "press-night"}])["available"], [])
+    def test_members_and_press_night_excluded(self):
+        for text in ["Press Night", "Members only", "Access-only", "Invitation only"]:
+            with self.subTest(text=text):
+                self.assertEqual(self.inventory(attribute_PerformanceInformation=text)["candidates"], [])
 
-    def test_wrong_show_empty_list_and_missing_status_are_errors(self):
-        for payload in [{"items": []}, {"items": [dict(ITEM, event_title="Another show")]}, {"items": [dict(ITEM, status=None)]}]:
-            with self.subTest(payload=payload), self.assertRaises(monitor.MonitorError):
-                monitor.parse_api(payload, NOW)
+    def test_public_sale_window_required_even_when_on_sale_is_true(self):
+        self.assertEqual(self.inventory(startSellingAtWebUtc="2026-11-01T10:00:00Z")["candidates"], [])
+        self.assertEqual(self.inventory(stopSellingAtWebUtc="2026-10-01T10:00:00Z")["candidates"], [])
 
-    def test_untrusted_booking_hosts_are_rejected(self):
-        for url in ["https://youngvic.org.example.com/ticket", "http://tickets.youngvic.org/event/1", "javascript:alert(1)"]:
-            with self.subTest(url=url), self.assertRaises(monitor.MonitorError):
-                self.api(booking_url=url)
+    def test_wrong_show_empty_or_mismatched_inventory_is_error(self):
+        for instances, payload in [([], INVENTORY), ([INSTANCE], {"data": []}), ([INSTANCE], {}), ([dict(INSTANCE, event={"id": "OTHER"})], INVENTORY), ([dict(INSTANCE, id="9999ABC")], INVENTORY), ([dict(INSTANCE, start="2026-11-14T19:30:00")], INVENTORY)]:
+            with self.subTest(instances=instances), self.assertRaises(monitor.MonitorError):
+                monitor.parse_inventory(instances, payload, NOW)
 
-    def test_dom_reads_group_date_and_public_booking_control(self):
-        self.assertEqual(self.dom()["available"][0]["when"], "2026-11-14 19:30")
+    def test_missing_negative_boolean_or_nonpublic_counts_are_errors(self):
+        for invalid in [None, -1, True, "1"]:
+            payload = copy.deepcopy(INVENTORY)
+            payload["data"][0]["availability"][0]["count"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(monitor.MonitorError):
+                monitor.parse_inventory([INSTANCE], payload, NOW)
+        payload["data"][0]["availability"][0] = {"count": 1, "status": "Reserved"}
+        with self.assertRaises(monitor.MonitorError):
+            monitor.parse_inventory([INSTANCE], payload, NOW)
 
-    def test_enabled_sold_out_access_link_is_excluded(self):
-        self.assertEqual(self.dom(links=[dict(ROW["links"][0], text="Sold Out")])["available"], [])
+    def test_second_confirmation_excludes_access_and_eligibility_seats(self):
+        candidate = self.inventory()["candidates"][0]
+        status = {"available": 0, "wheelchairAvailable": 2, "specialAvailable": 3, "capacity": 564, "lockInfoAvailable": [{"quantity": 4}], "lockInfoSpecialAvailable": [{"quantity": 5}]}
+        self.assertIsNone(monitor.confirm_public_seats(candidate, status))
+        result = monitor.confirm_public_seats(candidate, dict(status, available=1))
+        self.assertEqual(result["count"], 1)
+        self.assertTrue(result["confirmed"])
 
-    def test_disabled_span_means_sold_out(self):
-        self.assertEqual(self.dom(disabled="Sold Out", links=[])["available"], [])
+    def test_january_last_day_is_included_and_finished_show_is_not(self):
+        instance = dict(INSTANCE, start="2027-01-09T14:30:00", stopSellingAtWebUtc="2027-01-09T14:15:00Z")
+        inventory = copy.deepcopy(INVENTORY)
+        inventory["data"][0]["start"] = instance["start"]
+        result = monitor.parse_inventory([instance], inventory, NOW)
+        self.assertEqual(result["candidates"][0]["when"], "2027-01-09 14:30")
+        with self.assertRaises(monitor.MonitorError):
+            monitor.parse_inventory([instance], inventory, monitor.END)
 
-    def test_challenge_and_empty_dom_do_not_mean_sold_out(self):
-        for data in [{"title": "Eurotrash", "rows": []}, {"title": "Just a moment...", "challenge": True, "rows": [ROW]}]:
-            with self.subTest(data=data), self.assertRaises(monitor.MonitorError):
-                monitor.parse_dom(data, NOW)
+    def test_notification_has_confirmed_quantity_and_explicit_unknown_price(self):
+        candidate = self.inventory()["candidates"][0]
+        item = monitor.confirm_public_seats(candidate, {"available": 2, "capacity": 564})
+        body = monitor.alert_body([item], NOW)
+        self.assertIn("2 张普通公开座位", body)
+        self.assertIn("票价未知", body)
+        self.assertIn("余票随时可能售出", body)
 
-    def test_january_performance_uses_2027_and_matinee_time(self):
-        result = self.dom(date="Sat9 Jan", time="2:30 PM")
-        self.assertEqual(result["available"][0]["when"], "2027-01-09 14:30")
-
-    def test_notification_does_not_claim_confirmed_seats_or_price(self):
-        body = monitor.alert_body(self.api()["available"], NOW)
-        self.assertIn("实际可选座位请在官方售票页核对", body)
-        self.assertNotIn("£", body)
+    def test_observation_checks_instance_again_before_notifying(self):
+        production = {"name": "EUROTRASH", "id": monitor.EVENT_ID, "attribute_SupplementaryEvent": False}
+        responses = [[production], [INSTANCE], INVENTORY, {"available": 0, "capacity": 564}]
+        with patch.object(monitor, "request_json", side_effect=responses) as call:
+            result = monitor.observe(NOW)
+        self.assertEqual(result["available"], [])
+        self.assertIn("/status?includeChildPlans=true", call.call_args_list[-1].args[0])
 
     def test_existing_issue_marker_prevents_duplicate_notification(self):
         with patch.dict("os.environ", {"GITHUB_REPOSITORY": "example/watch", "GH_TOKEN": "test"}):
@@ -107,7 +142,7 @@ class StateTransitions(unittest.TestCase):
         self.addCleanup(self.clock.stop)
 
     def tick(self, available=False, fail=False):
-        result = {"total": 58, "source": "fixture", "available": [{"key": "one", "when": "2026-11-14 19:30", "url": ITEM["booking_url"]}] if available else []}
+        result = {"total": 58, "source": "fixture", "available": [{"key": "one", "when": "2026-11-14 19:30", "url": ITEM["booking_url"], "count": 1, "confirmed": True}] if available else []}
         with patch.object(monitor, "observe", side_effect=monitor.MonitorError("source unavailable") if fail else None, return_value=result):
             monitor.run()
 
