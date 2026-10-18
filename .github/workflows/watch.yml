@@ -31,4 +31,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_USER: ${{ github.repository_owner }}
           TEST_NOTIFICATION: ${{ inputs.test_notification }}
-        run: python3 monitor.py
+        run: xvfb-run -a python3 monitor.py
