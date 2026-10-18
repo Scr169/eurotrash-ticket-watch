@@ -6,6 +6,8 @@ Free public-repository GitHub Actions monitor for Young Vic's **Eurotrash**, wit
 
 Deployed at [Scr169/eurotrash-ticket-watch](https://github.com/Scr169/eurotrash-ticket-watch). A [real cloud check](https://github.com/Scr169/eurotrash-ticket-watch/actions/runs/39088151087) at **2026-10-18 02:54:24 Europe/London** successfully read **55 public performances**, with **zero ordinary public seats available**. A separately labelled test notification reached the intended Gmail inbox. The former local Codex check has been paused.
 
+**Verification limit (18 October 2026):** manual cloud reading and email delivery have passed. The first automatically scheduled run has not yet been observed. The official website displays 58 entries; the public ticket API returns 55. One absent entry is the 19 November Press Night; the two 2 December performances are also absent, for a reason not yet confirmed. The monitor fetches the public instance list anew each run, but full parity with all website entries has not been established. This monitor cannot guarantee that no brief ticket release is missed.
+
 ## Behaviour
 
 - GitHub's standard free Linux runner checks approximately every five minutes. Scheduled runs can be delayed or dropped by GitHub; this is not a guaranteed five-minute service.
