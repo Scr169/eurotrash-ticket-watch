@@ -1,7 +1,10 @@
 {
-  "status": "unknown",
-  "consecutive_failures": 2,
-  "last_error": "Official site requires human verification",
+  "status": "sold_out",
+  "consecutive_failures": 0,
+  "last_error": null,
   "last_heartbeat": "2026-10-18T01:42:45.005455+00:00",
-  "last_state_change": "2026-10-18T01:46:47.293502+00:00"
+  "last_state_change": "2026-10-18T01:54:24.250454+00:00",
+  "notified_keys": [],
+  "failure_notice_sent": false,
+  "performance_count": 55
 }
