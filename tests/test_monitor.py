@@ -114,6 +114,9 @@ class AvailabilityTests(unittest.TestCase):
 
 class StateTransitions(unittest.TestCase):
     def setUp(self):
+        quiet = patch("builtins.print")
+        quiet.start()
+        self.addCleanup(quiet.stop)
         self.saved = {}
         self.sent = []
         outer = self
