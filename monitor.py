@@ -163,7 +163,8 @@ def observe(now):
 
 
 class GitHub:
-    def __init__(self):
+    def __init__(self, state_path=STATE_PATH):
+        self.state_path = state_path
         self.repo = os.environ["GITHUB_REPOSITORY"]
         self.token = os.environ["GH_TOKEN"]
         self.owner = os.environ.get("NOTIFY_USER") or self.repo.split("/")[0]
@@ -176,7 +177,7 @@ class GitHub:
 
     def state(self):
         try:
-            item = self.call("/contents/" + STATE_PATH)
+            item = self.call("/contents/" + self.state_path)
         except HTTPError as exc:
             if exc.code == 404:
                 return {}, None
@@ -187,7 +188,7 @@ class GitHub:
         data = {"message": "Update monitor state [skip ci]", "content": base64.b64encode((json.dumps(state, ensure_ascii=False, indent=2) + "\n").encode()).decode()}
         if sha:
             data["sha"] = sha
-        return self.call("/contents/" + STATE_PATH, "PUT", data)
+        return self.call("/contents/" + self.state_path, "PUT", data)
 
     def notify(self, title, body, marker):
         # An alert may have been delivered immediately before a state-save
@@ -209,43 +210,49 @@ def alert_body(items, now):
     return "\n".join(lines)
 
 
-def run():
+def run(*, config=None, observer=None, github=None):
+    config = config or {}
+    name = config.get("name", "Young Vic《Eurotrash》")
+    prefix = config.get("prefix", "eurotrash")
+    show_url = config.get("url", SHOW)
+    end = config.get("end", END)
+    format_alert = config.get("format_alert", alert_body)
     now = datetime.now(timezone.utc)
-    if now >= END:
-        print("Eurotrash has finished. No further ticket checks or alerts.")
+    if now >= end:
+        print(name + " has finished. No further ticket checks or alerts.")
         return
-    gh = GitHub()
+    gh = github() if github else GitHub()
     state, sha = gh.state()
     before = json.dumps(state, sort_keys=True)
     stamp = now.isoformat()
     notification_error = None
     if os.environ.get("TEST_NOTIFICATION", "").lower() == "true":
-        marker = "eurotrash-setup-test-" + os.environ.get("GITHUB_RUN_ID", stamp)
-        url = gh.notify("【测试，不是放票】Eurotrash 云端通知测试", "这是 GitHub 云端监控发出的连接测试。**这不代表现在有票，也不代表查票链路已经通过验证。**\n\n若你收到这封邮件，邮件通知链路已连通。手机可开启 GitHub Mobile 的 Mentions／Assignments 推送，或 Gmail 新邮件通知。", marker)
+        marker = prefix + "-setup-test-" + os.environ.get("GITHUB_RUN_ID", stamp)
+        url = gh.notify("【测试，不是放票】" + name + " 云端通知测试", "这是 GitHub 云端监控发出的连接测试。**这不代表现在有票，也不代表查票链路已经通过验证。**\n\n监控对象：" + name + "\n\n" + show_url + "\n\n若你收到这封邮件，邮件通知链路已连通。手机可开启 GitHub Mobile 的 Mentions 推送，或 Gmail 新邮件通知。", marker)
         print("Test notification created:", url)
     try:
-        observation = observe(now)
+        observation = (observer or observe)(now)
         items = observation["available"]
         old_keys = set(state.get("notified_keys", []))
         fresh = [item for item in items if item["key"] not in old_keys]
         if fresh:
             fingerprint = hashlib.sha256(json.dumps([i["key"] for i in fresh], sort_keys=True).encode()).hexdigest()[:20]
             episode = str(state.get("episode", 0) + 1)
-            url = gh.notify("【放票提醒】Young Vic《Eurotrash》有票了", alert_body(fresh, now), "eurotrash-availability-" + episode + "-" + fingerprint)
+            url = gh.notify("【放票提醒】" + name + "有票了", format_alert(fresh, now), prefix + "-availability-" + episode + "-" + fingerprint)
             print("Availability notification acknowledged:", url)
             state["episode"] = int(episode)
         if state.get("failure_notice_sent"):
-            gh.notify("【监控恢复】Eurotrash 云端查票恢复", f"已重新读取 Eurotrash 官方的 {observation['total']} 场未来演出。\n\n{SHOW}", "eurotrash-recovery-" + str(state.get("failure_episode", 0)))
+            gh.notify("【监控恢复】" + name + " 云端查票恢复", f"已重新读取 {name} 官方的 {observation['total']} 场未来演出。\n\n{show_url}", prefix + "-recovery-" + str(state.get("failure_episode", 0)))
         state.update(status="available" if items else "sold_out", notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
         print(json.dumps({"checked_at": stamp, "source": observation["source"], "performances": observation["total"], "confirmed_available_performances": len(items), "status": state["status"]}))
     except Exception as exc:
         count = state.get("consecutive_failures", 0) + 1
         state.update(status="unknown", consecutive_failures=count, last_error=str(exc)[:500])
-        print("::warning::Eurotrash availability could not be verified:", str(exc)[:250])
+        print("::warning::" + name + " availability could not be verified:", str(exc)[:250])
         if count >= 3 and not state.get("failure_notice_sent"):
             episode = state.get("failure_episode", 0) + 1
             try:
-                gh.notify("【监控异常，不是放票】Eurotrash 连续读取失败", f"已连续 {count} 次无法核实官方余票，不能确认售罄或有票。\n\n错误：{str(exc)[:300]}\n\n请查看 [本次云端运行]({os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{gh.repo}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')})。\n\n{SHOW}", "eurotrash-failure-" + str(episode))
+                gh.notify("【监控异常，不是放票】" + name + " 连续读取失败", f"已连续 {count} 次无法核实官方余票，不能确认售罄或有票。\n\n错误：{str(exc)[:300]}\n\n请查看 [本次云端运行]({os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{gh.repo}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')})。\n\n{show_url}", prefix + "-failure-" + str(episode))
                 state.update(failure_notice_sent=True, failure_episode=episode)
             except Exception as alert_exc:
                 # Preserve the read-failure count even when notification itself
