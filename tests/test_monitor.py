@@ -154,6 +154,45 @@ class StateTransitions(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertEqual(self.saved["status"], "sold_out")
 
+    def test_successful_checks_record_real_freshness_and_failure_does_not(self):
+        self.tick()
+        self.assertEqual(self.saved["last_checked_at"], NOW.isoformat())
+        self.assertEqual(self.saved["check_count"], 1)
+        self.tick(fail=True)
+        self.assertEqual(self.saved["last_checked_at"], NOW.isoformat())
+        self.assertEqual(self.saved["check_count"], 1)
+        self.assertEqual(self.saved["status"], "unknown")
+
+    def test_early_signal_survives_confirmation_failure_and_deduplicates(self):
+        item = {"key": "early", "when": "2026-11-14 19:30", "url": ITEM["booking_url"]}
+
+        def observer(now, on_candidates):
+            on_candidates([item])
+            raise monitor.MonitorError("booking page unavailable")
+
+        monitor.run(observer=observer)
+        monitor.run(observer=observer)
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("余票待核实", self.sent[0][0])
+        self.assertEqual(self.saved["candidate_notified_keys"], ["early"])
+        self.assertEqual(self.saved["status"], "unknown")
+        self.assertNotIn("last_checked_at", self.saved)
+
+    def test_confirmed_sold_out_resets_early_signal_for_return(self):
+        item = {"key": "early", "when": "2026-11-14 19:30", "url": ITEM["booking_url"]}
+
+        def observer(now, on_candidates):
+            on_candidates([] if getattr(self, "closed", False) else [item])
+            return {"total": 1, "source": "fixture", "available": []}
+
+        monitor.run(observer=observer)
+        self.closed = True
+        monitor.run(observer=observer)
+        self.closed = False
+        monitor.run(observer=observer)
+        self.assertEqual(len(self.sent), 2)
+        self.assertNotEqual(self.sent[0][1], self.sent[1][1])
+
     def test_continuous_stock_deduplicates_but_return_after_sold_out_alerts(self):
         self.tick(available=True)
         self.tick(available=True)

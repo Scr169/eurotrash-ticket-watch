@@ -34,6 +34,15 @@ class GoldenBoyTests(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["url"], CANDIDATE["url"])
         self.assertNotIn("confirmed", result["candidates"][0])
 
+    def test_early_callback_happens_before_browser_launch_even_if_browser_fails(self):
+        html = ROW.replace('<span class="c-btn c-btn--disabled">Sold Out</span>', '<a class="c-btn" href="https://ticketing.almeida.co.uk/8745/8884">Book Tickets</a>')
+        seen = []
+        with patch.object(golden_boy, 'read_calendar', return_value=dict(PAYLOAD, instances=[html])), patch.object(golden_boy, 'Browser', side_effect=monitor.MonitorError('browser failed')):
+            with self.assertRaises(monitor.MonitorError):
+                golden_boy.observe(NOW, on_candidates=lambda items: seen.extend(items))
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]['url'], CANDIDATE['url'])
+
     def test_spoofed_or_different_production_booking_links_rejected(self):
         for url in ['https://ticketing.almeida.co.uk.example.com/8745/8884', 'http://ticketing.almeida.co.uk/8745/8884', 'https://ticketing.almeida.co.uk/9999/8884', 'https://ticketing.almeida.co.uk/account/login']:
             with self.subTest(url=url), self.assertRaises(monitor.MonitorError):
