@@ -8,5 +8,12 @@
   "last_heartbeat": "2026-10-18T20:49:02.861530+00:00",
   "last_state_change": "2026-10-19T14:12:35.660586+00:00",
   "last_attempt_at": "2026-10-19T14:12:35.660586+00:00",
-  "last_run_id": "39266857707"
+  "last_run_id": "39266857707",
+  "candidate_notified_keys": [
+    "2026-10-24T14:00:00+01:00|https://ticketing.almeida.co.uk/8745/8890"
+  ],
+  "candidate_episode": 1,
+  "current_candidate_count": 1,
+  "last_source_read_at": "2026-10-19T14:13:00+00:00",
+  "candidate_notification_channel": "manual_gmail_acknowledged"
 }

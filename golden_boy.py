@@ -90,7 +90,10 @@ def parse_calendar(payload, now):
         row = rows[0]
         titles = row.find(cls="c-calendar-instance__title")
         links = row.find(cls="c-calendar-instance__event-link")
-        dates = row.find(tag="time")
+        # A live Book Tickets link includes an extra screen-reader-only
+        # <time> inside the button. Only the labelled performance datetime is
+        # authoritative; counting every <time> rejects the actual open state.
+        dates = [node for node in row.find(tag="time") if node.attrs.get("datetime")]
         if len(titles) != 1 or titles[0].text().casefold() != "golden boy" or len(links) != 1 or links[0].attrs.get("href") != SHOW or len(dates) != 1:
             raise monitor.MonitorError("Calendar contains another event or an invalid date")
         start = monitor.date(dates[0].attrs.get("datetime"))
