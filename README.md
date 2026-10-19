@@ -1,55 +1,57 @@
-# Free theatre ticket watch
+# 两场戏的免费云端放票提醒
 
-Cloud monitors for **Young Vic — Eurotrash** and **Almeida — Golden Boy**, using their official ticket sources. A personal computer does not need to remain on. Public code contains no personal email address, passwords or personal access tokens.
+监控 **Young Vic《Eurotrash》** 和 **Almeida《Golden Boy》** 的官方票源。电脑可以关机。只提醒，不登录剧院、不占座、不加购物车、不购买。
 
-## Schedule reliability
+## 独立调度与停跑告警
 
-**This is not a reliable five-minute service.** Although the workflow requests a five-minute schedule, on 18 October 2026 only five automatic runs were observed between 06:36 and 19:36 UTC, with gaps of roughly **2–5 hours**. These runs did successfully read Eurotrash's public inventory. A brief release can be missed during a scheduling gap. [Automatic run evidence](https://github.com/Scr169/eurotrash-ticket-watch/actions/runs/39159511961).
+主调度器是私有 **Google Apps Script**：dispatchChecks 时间触发器每五分钟调用 GitHub workflow_dispatch，由标准公共 Linux runner 执行官方查票和浏览器核验。GitHub 原 cron 保留为备用；它曾出现约七小时空档，配置间隔不能当成实际执行频率。
 
-GitHub can delay/drop schedules. Both monitors run when GitHub starts the workflow; the latest run log is the check timestamp. The schedule has no guaranteed response time.
+第二个 Google 时间触发器 watchdog 检查两份状态的真实读取时间。只有所有仍在演出的剧目都有新的成功读取，才向另一家云服务 **Healthchecks.io** 发健康心跳。任务已排队、绿色工作流、旧成功结果，或只有一部剧更新，都不能反复刷新健康状态。Healthchecks 超过五分钟预期间隔加十分钟宽限未收到新心跳会发送异常邮件，Google 整体停止时仍能告警。
 
-## Monitored productions
+免费服务没有无延迟保证。查看 Actions 实际运行记录、状态中的 last_checked_at 和 Healthchecks 心跳记录；短于检查间隔的变化仍可能错过，发现放票也不保证最终能买到。
 
-| Production | Official source | End date, London time | State file |
+## 官方票源与结束时间
+
+| 剧目 | 官方来源 | 监控至（伦敦时间） | 状态文件 |
 | --- | --- | --- | --- |
-| Eurotrash | Young Vic's official Spektrix public Web API | 9 January 2027 | `monitor-state.json` |
-| Golden Boy | Almeida's actual filtered calendar query, followed by the official performance booking page for positive signals | 31 October 2026 | `golden-boy-state.json` |
+| Eurotrash | Young Vic 官方 Spektrix public Web API；正向信号再次核对普通公开可买座位数 | 2027-01-09 演出结束 | monitor-state.json |
+| Golden Boy | Almeida 官方筛选日历实际查询；正向信号打开对应官方售票页核验日期、时间和公开可选票 | 2026-10-31 演出结束 | golden-boy-state.json |
 
-### Golden Boy verification
+Eurotrash 官网曾展示 58 项，公开 API 返回 55 场。未返回项包括 Press Night 和 12 月 2 日两场，后两场原因未确认；尚未验证与官网全部场次完全一致。每次重新读取公开列表，不能承诺未公开场次的库存覆盖。
 
-The [official ticket guide](https://almeida.co.uk/how-to-get-tickets-to-golden-boy/) links to [the Golden Boy calendar](https://almeida.co.uk/calendar/?e=golden-boy). Its actual form and public calendar script identify WordPress event `11278` and the read-only `calendar` AJAX query. The official ticketing site identifies the corresponding production as `8745`. The browser calendar and the same live query both returned **16 future performances, all sold out**, on 18 October 2026.
+Golden Boy 官方日历表单与脚本使用 WordPress event 11278，官方售票 production 为 8745。2026-10-19 捕捉到 10 月 24 日 14:00 的 Book Tickets / Limited availability，并邮件提前提醒；打开售票页时明确显示 Sold Out，没有宣称确认有票。真实开放按钮内多出的辅助 time 标签已加入回归测试，日期只采用带 datetime 的场次时间。
 
-A [real cloud run](https://github.com/Scr169/eurotrash-ticket-watch/actions/runs/39165022391) at **21:49 Europe/London on 18 October 2026** read the 16 sold-out performances, opened and verified an official Golden Boy performance page, and passed all 27 tests. The clearly labelled [setup test issue](https://github.com/Scr169/eurotrash-ticket-watch/issues/2) was delivered to the configured Gmail inbox. This was a manual setup run; the updated two-production workflow is scheduled but its own first automatic run has not yet been observed.
+## 两级提醒与去重
 
-An enabled calendar booking link alone cannot trigger a ticket alert. The monitor opens only the official link, verifies the production/date/time, and requires a visible selectable public seat or an enabled ticket quantity, price and purchase control. It does not click these controls. Unknown, blocked or unrecognised pages are errors. Actual positive-inventory operation cannot be validated live while every performance is sold out; fixtures test the confirmation rules.
+1. **【购票入口变化，余票待核实】**：官方场次出现公开购票链接或票源正向信号就先提醒，随后继续核验。价格和实际余票未确认时明确说明。
+2. **【放票提醒】有票了**：再次验证至少一张普通公开可选票/座位后补发确认。只有入口按钮不够；会员、邀请或 Access 专属库存不算普通公开票。Audio Described 或 Relaxed 场次本身不等于专属票。
 
-### Eurotrash verification and coverage limit
+同一持续信号去重；官方场次确实关闭后重新出现再提醒。提前通知和确认通知分别去重。提醒包含伦敦时间、演出时间、官方直达链接和余票可能随时售出的说明。GitHub issue @提及账户所有者，经其已验证邮箱接收；手机开启 Gmail 新邮件或 GitHub Mentions 通知。
 
-Manual reading and email delivery were verified, and subsequent **automatic scheduled reads were verified**. The Young Vic website displays 58 entries; the public API returns 55. The absent entries are 19 November Press Night and two 2 December performances. The reason for the latter two absences is unconfirmed. The public list is fetched anew every check, but full parity with the website has not been established.
+## 故障与时间记录
 
-## Alerts
+- 页面错误、验证码、空列表、无法识别的数据、缺少公开座位证据均为 unknown，不能当售罄。
+- 连续三次读取失败，单独发“监控异常，不是放票”；恢复后提醒一次。两部剧分开记录。
+- last_attempt_at 是实际尝试时间；last_checked_at 只在成功核实本轮状态后更新；last_source_read_at 表示读到了票源信号。last_state_change 不能代替检查时间。
+- 独立 watchdog 另检查真实尝试是否超过十五分钟；Healthchecks 监测新的健康结果是否中断。报警演练使用单独、明确标为测试的 check，正式查票持续运行。
+- 2027-01-10 自动暂停正式 Healthchecks check 并删除本项目两个 Google 时间触发器，避免演出结束后误报警。
 
-- A new publicly bookable performance causes one Chinese GitHub issue mentioning the repository owner. GitHub delivers it to the owner's configured email and mobile notifications. Gmail delivery of the original setup test was verified.
-- Each production has separate state, duplicate suppression, failure counts and notification markers. A failure for one production does not prevent the other step from running.
-- A continuously available performance is not announced repeatedly. After a successful intervening sold-out check it can notify again.
-- Three consecutive failed checks cause one clearly labelled **monitor failure** notice, followed by one recovery notice. A blocked, empty or invalid response is never treated as sold out.
-- Alerts include London verification time, performance time, evidence of public availability and an official booking link. Unknown prices are explicitly unknown. Tickets may sell at any time.
-- Member-only, invitation-only and eligibility-restricted inventory is excluded. Ordinary public tickets to accessible performances are eligible; a performance being relaxed or audio described does not alone make its ordinary seats restricted.
-- No seats are selected, reserved or added to a basket; no purchase or theatre login is performed.
-- Checks for each production stop after its end date. A small state heartbeat avoids GitHub's inactivity schedule expiry during the run.
+## 私有凭据与停止
 
-## Phone and controls
+公开代码不含个人邮箱、密码或令牌。Google 脚本仅请求联网与无人值守执行，不读取 Gmail。GitHub fine-grained token 仅限本仓库：Actions 写、Contents 读、Issues 写和必需 Metadata 读，2027-01-11 到期。它与 Healthchecks 项目凭据只存 Google 私有 Script Properties，已获用户明确授权。
 
-Enable Gmail new-mail notifications, or GitHub Mobile **Mentions**. GitHub participating/@mention notifications must be enabled for **Email and On GitHub** with the intended verified email selected.
+完整停止需删除 Google 项目的 dispatchChecks 和 watchdog 两个触发器、暂停 Healthchecks 正式 check，并停用 GitHub 工作流。只停 GitHub 会触发预期故障告警。原来依赖电脑的本地任务保持暂停。
 
-[Workflow controls](https://github.com/Scr169/eurotrash-ticket-watch/actions/workflows/watch.yml): run manually, test either production's notification, or disable the workflow. The Golden Boy test also checks cloud access to one official Golden Boy booking page and is explicitly labelled as a test, never a ticket alert.
+## 验证
 
-Run `python3 -m unittest discover -s tests -v` — **27 tests** cover source identity, real disabled sold-out spans, sale windows, incorrect dates/productions, restricted stock, unconfirmed booking buttons, separate state, notification deduplication and failure/recovery retries. A green job alone is insufficient: inspect each production's actual result in the log/state file.
+运行 python3 -m unittest discover -s tests -v，以及 node --test tests/test_scheduler.cjs。
 
-## Official references
+32 个 Python 测试覆盖官方来源、真实售罄/开放形态、公开座位核验、早期提醒顺序、去重、失败重试和实际读取时间。6 个调度器测试覆盖排队不等于检查、旧结果不能续命、只一部剧更新不算双剧健康、停跑和调度失败。
 
-- [Almeida Golden Boy](https://almeida.co.uk/whats-on/golden-boy/)
-- [Almeida official return-ticket guide](https://almeida.co.uk/how-to-get-tickets-to-golden-boy/)
+## 官方依据
+
 - [Young Vic Eurotrash](https://www.youngvic.org/whats-on/eurotrash/)
-- [Spektrix public event filtering](https://integrate.spektrix.com/docs/apieventfiltering) and [seat availability](https://integrate.spektrix.com/docs/Availability)
-- [GitHub standard public-runner billing](https://docs.github.com/en/actions/concepts/billing-and-usage) and [schedule limitations](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+- [Almeida Golden Boy](https://almeida.co.uk/whats-on/golden-boy/) · [官方退票指引](https://almeida.co.uk/how-to-get-tickets-to-golden-boy/)
+- [Google 定时器](https://developers.google.com/apps-script/guides/triggers/installable) · [免费配额](https://developers.google.com/apps-script/guides/services/quotas)
+- [GitHub 定时任务可能延迟或丢弃](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows)
+- [Healthchecks 免费方案](https://healthchecks.io/pricing/) · [故障心跳机制](https://healthchecks.io/docs/)
