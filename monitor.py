@@ -145,7 +145,7 @@ def confirm_public_seats(candidate, status):
     return dict(candidate, count=available, confirmed=True)
 
 
-def observe(now):
+def observe(now, on_candidates=None):
     params = urlencode({"name": "Eurotrash", "instanceStart_from": now.astimezone(LONDON).date().isoformat(), "instanceStart_to": END.date().isoformat()})
     select_event(request_json(TICKETS + "/events?" + params))
     date_params = urlencode({"start_from": now.astimezone(LONDON).date().isoformat(), "start_to": END.date().isoformat()})
@@ -153,6 +153,8 @@ def observe(now):
     instances = request_json(base + "/instances?" + date_params)
     inventory = request_json(base + "/availability?" + date_params)
     result = parse_inventory(instances, inventory, now)
+    if on_candidates is not None:
+        on_candidates(result["candidates"])
     available = []
     for candidate in result["candidates"]:
         status = request_json(TICKETS + "/instances/" + candidate["instance_id"] + "/status?includeChildPlans=true")
@@ -210,6 +212,13 @@ def alert_body(items, now):
     return "\n".join(lines)
 
 
+def candidate_body(name, items, now):
+    lines = [f"{name} 官方场次出现购票入口或可购信号。尚未完成可选座位核验，不能确认一定有票。", "", f"发现时间：{now.astimezone(LONDON):%Y-%m-%d %H:%M:%S}（伦敦时间）", ""]
+    lines += [f"- **{item['when']}（伦敦时间）**：[立即打开官方购票页]({item['url']})" for item in items]
+    lines += ["", "票价和实际余票待核实。确认有公开可选票后会另发确认通知。入口可能很快关闭，请自行查看；监控不会占座或购买。"]
+    return "\n".join(lines)
+
+
 def run(*, config=None, observer=None, github=None):
     config = config or {}
     name = config.get("name", "Young Vic《Eurotrash》")
@@ -226,12 +235,29 @@ def run(*, config=None, observer=None, github=None):
     before = json.dumps(state, sort_keys=True)
     stamp = now.isoformat()
     notification_error = None
+    state["last_attempt_at"] = stamp
+    state["last_run_id"] = os.environ.get("GITHUB_RUN_ID")
+
+    def publish_candidates(candidates):
+        # Authorized on 19 October: send the early signal before slow browser
+        # confirmation, explicitly distinguish it from confirmed availability.
+        state["last_source_read_at"] = stamp
+        old = set(state.get("candidate_notified_keys", []))
+        fresh = [item for item in candidates if item["key"] not in old]
+        if fresh:
+            episode = state.get("candidate_episode", 0) + 1
+            fingerprint = hashlib.sha256(json.dumps([i["key"] for i in fresh], sort_keys=True).encode()).hexdigest()[:20]
+            url = gh.notify("【购票入口变化，余票待核实】" + name, candidate_body(name, fresh, now), prefix + "-candidate-" + str(episode) + "-" + fingerprint)
+            print("Early booking signal acknowledged:", url)
+            state["candidate_episode"] = episode
+        state["candidate_notified_keys"] = [item["key"] for item in candidates]
+        state["current_candidate_count"] = len(candidates)
     if os.environ.get("TEST_NOTIFICATION", "").lower() == "true":
         marker = prefix + "-setup-test-" + os.environ.get("GITHUB_RUN_ID", stamp)
         url = gh.notify("【测试，不是放票】" + name + " 云端通知测试", "这是 GitHub 云端监控发出的连接测试。**这不代表现在有票，也不代表查票链路已经通过验证。**\n\n监控对象：" + name + "\n\n" + show_url + "\n\n若你收到这封邮件，邮件通知链路已连通。手机可开启 GitHub Mobile 的 Mentions 推送，或 Gmail 新邮件通知。", marker)
         print("Test notification created:", url)
     try:
-        observation = (observer or observe)(now)
+        observation = (observer or observe)(now, on_candidates=publish_candidates)
         items = observation["available"]
         old_keys = set(state.get("notified_keys", []))
         fresh = [item for item in items if item["key"] not in old_keys]
@@ -244,6 +270,8 @@ def run(*, config=None, observer=None, github=None):
         if state.get("failure_notice_sent"):
             gh.notify("【监控恢复】" + name + " 云端查票恢复", f"已重新读取 {name} 官方的 {observation['total']} 场未来演出。\n\n{show_url}", prefix + "-recovery-" + str(state.get("failure_episode", 0)))
         state.update(status="available" if items else "sold_out", notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
+        state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
+        state["check_count"] = state.get("check_count", 0) + 1
         print(json.dumps({"checked_at": stamp, "source": observation["source"], "performances": observation["total"], "confirmed_available_performances": len(items), "status": state["status"]}))
     except Exception as exc:
         count = state.get("consecutive_failures", 0) + 1

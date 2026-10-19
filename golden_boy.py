@@ -242,8 +242,10 @@ def confirm_booking(candidate, data):
     raise monitor.MonitorError("Booking link is open but no public selectable seat/quantity is confirmed")
 
 
-def observe(now):
+def observe(now, on_candidates=None):
     result = parse_calendar(read_calendar(), now)
+    if on_candidates is not None:
+        on_candidates(result["candidates"])
     available = []
     probe = os.environ.get("VERIFY_BOOKING_PROBE", "").lower() == "true"
     if result["candidates"] or probe:
