@@ -32,7 +32,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Test both monitors
-        run: python3 -m unittest discover -s tests -v
+        run: |
+          python3 -m unittest discover -s tests -v
+          node --test tests/test_scheduler.cjs
       - name: Check official public Eurotrash ticket status
         env:
           GH_TOKEN: ${{ github.token }}
