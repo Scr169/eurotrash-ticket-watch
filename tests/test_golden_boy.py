@@ -9,7 +9,7 @@ import monitor
 NOW = datetime(2026, 10, 18, 20, tzinfo=timezone.utc)
 # Shape and disabled span taken from Almeida's actual calendar response.
 ROW = '''<div class="c-calendar-instance">
-<time datetime="2026-10-19 19:30:00">Mon 19 Oct 7.30pm</time>
+<time class="c-calendar-instance__time" datetime="2026-10-19 19:30:00">Mon 19 Oct 7.30pm</time>
 <a class="c-calendar-instance__event-link" href="https://almeida.co.uk/whats-on/golden-boy/">
 <h3 class="c-calendar-instance__title">Golden Boy</h3></a>
 <div class="c-calendar-instance__button"><span class="c-btn c-btn--disabled">Sold Out</span></div></div>'''
@@ -42,6 +42,12 @@ class GoldenBoyTests(unittest.TestCase):
                 golden_boy.observe(NOW, on_candidates=lambda items: seen.extend(items))
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0]['url'], CANDIDATE['url'])
+
+    def test_actual_open_link_with_screen_reader_time_is_parsed(self):
+        html = ROW.replace('<span class="c-btn c-btn--disabled">Sold Out</span>', '<a class="c-btn c-btn--book" href="https://ticketing.almeida.co.uk/8745/8884">Book Tickets<span class="u-hidden-visually">Golden Boy<time>7:30 pm</time></span></a>')
+        result = golden_boy.parse_calendar(dict(PAYLOAD, instances=[html]), NOW)
+        self.assertEqual(len(result['candidates']), 1)
+        self.assertEqual(result['candidates'][0]['start'], CANDIDATE['start'])
 
     def test_spoofed_or_different_production_booking_links_rejected(self):
         for url in ['https://ticketing.almeida.co.uk.example.com/8745/8884', 'http://ticketing.almeida.co.uk/8745/8884', 'https://ticketing.almeida.co.uk/9999/8884', 'https://ticketing.almeida.co.uk/account/login']:
