@@ -6,14 +6,14 @@
   "last_error": null,
   "performance_count": 15,
   "last_heartbeat": "2026-10-18T20:49:02.861530+00:00",
-  "last_state_change": "2026-10-20T00:22:27.877179+00:00",
-  "last_attempt_at": "2026-10-20T00:22:27.877179+00:00",
-  "last_run_id": "39347232263",
+  "last_state_change": "2026-10-20T00:27:24.336280+00:00",
+  "last_attempt_at": "2026-10-20T00:27:24.336280+00:00",
+  "last_run_id": "39347729257",
   "candidate_notified_keys": [],
   "candidate_episode": 6,
   "current_candidate_count": 0,
-  "last_source_read_at": "2026-10-20T00:22:27.877179+00:00",
+  "last_source_read_at": "2026-10-20T00:27:24.336280+00:00",
   "candidate_notification_channel": "manual_gmail_acknowledged",
-  "last_checked_at": "2026-10-20T00:22:28.629254+00:00",
-  "check_count": 125
+  "last_checked_at": "2026-10-20T00:27:25.229608+00:00",
+  "check_count": 126
 }
