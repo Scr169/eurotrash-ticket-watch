@@ -3,15 +3,15 @@
   "consecutive_failures": 0,
   "last_error": null,
   "last_heartbeat": "2026-10-18T01:42:45.005455+00:00",
-  "last_state_change": "2026-10-20T01:27:20.771281+00:00",
+  "last_state_change": "2026-10-20T01:32:21.478300+00:00",
   "notified_keys": [],
   "failure_notice_sent": false,
   "performance_count": 55,
-  "last_attempt_at": "2026-10-20T01:27:20.771281+00:00",
-  "last_run_id": "39353506789",
-  "last_source_read_at": "2026-10-20T01:27:20.771281+00:00",
+  "last_attempt_at": "2026-10-20T01:32:21.478300+00:00",
+  "last_run_id": "39353977575",
+  "last_source_read_at": "2026-10-20T01:32:21.478300+00:00",
   "candidate_notified_keys": [],
   "current_candidate_count": 0,
-  "last_checked_at": "2026-10-20T01:27:22.237272+00:00",
-  "check_count": 139
+  "last_checked_at": "2026-10-20T01:32:23.048187+00:00",
+  "check_count": 140
 }
