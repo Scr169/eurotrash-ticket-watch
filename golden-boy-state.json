@@ -1,22 +1,22 @@
 {
   "status": "unknown",
   "notified_keys": [],
-  "consecutive_failures": 2,
-  "failure_notice_sent": false,
+  "consecutive_failures": 3,
+  "failure_notice_sent": true,
   "last_error": "Booking link is open but no public selectable seat/quantity is confirmed",
   "performance_count": 14,
   "last_heartbeat": "2026-10-18T20:49:02.861530+00:00",
-  "last_state_change": "2026-10-21T12:37:26.620052+00:00",
-  "last_attempt_at": "2026-10-21T12:37:26.620052+00:00",
-  "last_run_id": "39601058221",
+  "last_state_change": "2026-10-21T12:42:26.262597+00:00",
+  "last_attempt_at": "2026-10-21T12:42:26.262597+00:00",
+  "last_run_id": "39601722096",
   "candidate_notified_keys": [
     "2026-10-21T14:00:00+01:00|https://ticketing.almeida.co.uk/8745/8886"
   ],
   "candidate_episode": 22,
   "current_candidate_count": 1,
-  "last_source_read_at": "2026-10-21T12:37:26.620052+00:00",
+  "last_source_read_at": "2026-10-21T12:42:26.262597+00:00",
   "candidate_notification_channel": "manual_gmail_acknowledged",
   "last_checked_at": "2026-10-21T12:27:26.669910+00:00",
   "check_count": 552,
-  "failure_episode": 1
+  "failure_episode": 2
 }
