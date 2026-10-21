@@ -13,6 +13,10 @@ on:
         description: 'Test Golden Boy email and official booking-page connectivity'
         type: boolean
         default: false
+      jcs_probe:
+        description: 'Manual diagnostic only: LW currently rejects the cloud browser; not an active ticket monitor'
+        type: boolean
+        default: false
 
 concurrency:
   group: eurotrash-ticket-watch
@@ -55,18 +59,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_USER: ${{ github.repository_owner }}
         run: python3 an_oak_tree.py
-      - name: Check official sohoplace Virginia Woolf full-run calendar
-        if: ${{ !cancelled() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NOTIFY_USER: ${{ github.repository_owner }}
-        run: xvfb-run -a python3 virginia_woolf.py
+      # Virginia Woolf paused at the user's request on 21 October 2026.
 
   jcs:
     # Separate job after the other shows: a slow LW booking site cannot
     # consume their job timeout. Serial state writes avoid branch conflicts.
     needs: check
-    if: ${{ always() && !cancelled() }}
+    if: ${{ always() && !cancelled() && inputs.jcs_probe == true }}
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
