@@ -1,6 +1,6 @@
 # 剧院免费云端放票提醒
 
-监控 **Eurotrash、Golden Boy、An Oak Tree（Suranne Jones指定场）、Who’s Afraid of Virginia Woolf?、JCS £25舞台站票** 的官方票源。电脑可以关机。只提醒，不登录剧院、不占座、不加购物车、不购买。
+正式监控 **Eurotrash、Golden Boy、An Oak Tree（Suranne Jones指定场）** 的官方票源。Virginia Woolf已按用户2026-10-21的要求暂停；JCS £25舞台站票尚未启用，见下方阻塞说明。电脑可以关机。只提醒，不登录剧院、不占座、不加购物车、不购买。
 
 ## 独立调度与停跑告警
 
@@ -17,8 +17,8 @@
 | Eurotrash | Young Vic 官方 Spektrix public Web API；正向信号再次核对普通公开可买座位数 | 2027-01-09 演出结束 | monitor-state.json |
 | Golden Boy | Almeida 官方筛选日历实际查询；正向信号打开对应官方售票页核验日期、时间和公开可选票 | 2026-10-31 演出结束 | golden-boy-state.json |
 | An Oak Tree / Suranne Jones | The Other Palace官方Spektrix公开票源，仅240703 / 2026-11-15 15:00，正向信号再次排除专属锁座 | 2026-11-15 15:00开演 | an-oak-tree-state.json |
-| Who’s Afraid of Virginia Woolf? | @sohoplace官方整轮场次日历；正向信号打开对应nLiven售票页核验公开座位 | 2026-12-19演出结束 | virginia-woolf-state.json |
-| JCS On-Stage Standing | LW Theatres官方日历，逐场打开独立舞台票区弹窗，只接受£25与正数公开数量同时存在；普通观众席£25起价不能触发提醒 | 2026-10-31演出结束 | jcs-on-stage-state.json |
+| Who’s Afraid of Virginia Woolf?（已暂停） | 2026-10-21已通过官方整轮日历实测，后按用户要求停用；不再查询或通知，不参加心跳 | 暂不监控 | virginia-woolf-state.json（历史记录） |
+| JCS On-Stage Standing（未启用） | 普通本地浏览器可打开舞台票区；两次GitHub云端Chrome被官网拒绝验证，不能判断库存。仅保留手动诊断，不参加正式心跳 | 需求范围：2026-10-31及之前 | jcs-on-stage-state.json（unknown） |
 
 Eurotrash 官网曾展示 58 项，公开 API 返回 55 场。未返回项包括 Press Night 和 12 月 2 日两场，后两场原因未确认；尚未验证与官网全部场次完全一致。每次重新读取公开列表，不能承诺未公开场次的库存覆盖。
 
@@ -49,7 +49,7 @@ Golden Boy 官方日历表单与脚本使用 WordPress event 11278，官方售�
 
 运行 python3 -m unittest discover -s tests -v，以及 node --test tests/test_scheduler.cjs。
 
-48 个 Python 测试覆盖官方来源、真实售罄/开放形态、公开座位核验、早期提醒顺序、去重、失败重试和实际读取时间。7 个调度器测试覆盖排队不等于检查、旧结果不能续命、只部分剧目更新不算全体健康、停跑和调度失败。
+48 个 Python 测试覆盖官方来源、真实售罄/开放形态、公开座位核验、早期提醒顺序、去重、失败重试和实际读取时间。8 个调度器测试覆盖排队不等于检查、旧结果不能续命、只部分剧目更新不算全体健康、停跑和调度失败。
 
 ## 官方依据
 
@@ -61,6 +61,10 @@ Golden Boy 官方日历表单与脚本使用 WordPress event 11278，官方售�
 
 ## 新增监控的范围与负载
 
-每五分钟仍只启动一个工作流。Suranne与Woolf的日常售罄检查只需少量公开只读请求；JCS须用普通Chrome逐场打开舞台票区，独立作业超时三分钟，并在其他剧目检查后执行。各剧目独立状态、去重和连续失败告警；新增网站失败不应阻止已完成的其他剧目结果保存。全体健康心跳必须包括每个尚未结束的监控。
+每五分钟仍只启动一个工作流，正式运行三项监控。Suranne的日常售罄检查只需少量公开只读请求。Woolf代码保留但工作流不执行。JCS诊断代码会用普通Chrome逐场打开舞台票区，但目前未通过云端加载，默认不运行；仅手动勾选jcs_probe可再次诊断，失败作业会明确变红。各剧目独立状态、去重和连续失败告警；新增网站失败不应阻止已完成的其他剧目结果保存。全体健康心跳必须包括每个尚未结束的监控。
 
 只开票区、不改变票数、不点实际座位、不点Update Basket、不接受On-stage Standing Agreement。遇到验证码或未识别票种时记unknown，不把普通席余票或静态£25标签当舞台票。@sohoplace nLiven日历的Low徽标在售罄场次也存在，所以不用它判断有票；官方主页场次计数可能有剧院自身同步/缓存延迟。所有监控都可能漏掉短于检查间隔的退票。演员出席以剧院公告为准。
+
+### JCS实际阻塞（2026-10-21）
+
+在正常Chrome/Xvfb中分别等待16秒与32秒，两次官方日历都返回`We couldn’t verify your browser`（云端日志为ASCII撇号）。未破解验证码、未复制本地cookie或浏览器凭据、未更改指纹规避验证。普通票£25起、舞台票区静态£25标题都不能证明舞台票可买。JCS不加入正式FEEDS，否则它的持续unknown会阻止其他三项续心跳，使后续停跑告警失去区分。只有官方来源在云端真实读取成功后才可启用。

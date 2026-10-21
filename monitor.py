@@ -297,6 +297,7 @@ def run(*, config=None, observer=None, github=None):
         gh.save(state, sha)
     if notification_error is not None:
         raise MonitorError("Could not deliver the monitor failure notification") from notification_error
+    return state
 
 
 if __name__ == "__main__":

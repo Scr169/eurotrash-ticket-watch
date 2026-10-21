@@ -4,7 +4,7 @@
   "last_source_read_at": "2026-10-21T22:37:30.101141+00:00",
   "candidate_notified_keys": [],
   "current_candidate_count": 0,
-  "status": "sold_out",
+  "status": "paused",
   "notified_keys": [],
   "consecutive_failures": 0,
   "failure_notice_sent": false,
@@ -13,5 +13,7 @@
   "last_checked_at": "2026-10-21T22:37:31.150368+00:00",
   "check_count": 2,
   "last_heartbeat": "2026-10-21T22:33:52.982651+00:00",
-  "last_state_change": "2026-10-21T22:37:30.101141+00:00"
+  "last_state_change": "2026-10-21T22:37:30.101141+00:00",
+  "paused_at": "2026-10-21T22:41:00+00:00",
+  "pause_reason": "User requested pausing Virginia Woolf; no more stock checks or notifications."
 }

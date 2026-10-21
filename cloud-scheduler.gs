@@ -11,10 +11,13 @@ const MAX_AGE_MS = 15 * 60 * 1000;
 const FEEDS = [
   {name:'Young Vic《Eurotrash》', path:'monitor-state.json', end:ENDS_AT},
   {name:'Almeida《Golden Boy》', path:'golden-boy-state.json', end:'2026-11-01T00:00:00Z'},
-  {name:'The Other Palace《An Oak Tree》Suranne Jones', path:'an-oak-tree-state.json', end:'2026-11-15T15:00:00Z'},
-  {name:'@sohoplace《Who\'s Afraid of Virginia Woolf?》', path:'virginia-woolf-state.json', end:'2026-12-20T00:00:00Z'},
-  {name:'JCS £25 On-Stage Standing · 至10月31日', path:'jcs-on-stage-state.json', end:'2026-11-01T00:00:00Z'}
+  {name:'The Other Palace《An Oak Tree》Suranne Jones', path:'an-oak-tree-state.json', end:'2026-11-15T15:00:00Z'}
 ];
+// Virginia Woolf is paused at the user's request on 21 October 2026.
+// JCS is NOT an active feed: two ordinary cloud Chrome runs were rejected by
+// the official site ("We couldn't verify your browser"). Its workflow job is
+// manual diagnostic only until a real official stock read succeeds. Leaving
+// an unverified feed here would mask dead-man alarms for the working shows.
 
 function setup() {
   github_('/actions/workflows/' + WORKFLOW);

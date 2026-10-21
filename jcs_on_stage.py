@@ -187,7 +187,9 @@ def alert_body(items, now):
 
 
 def run():
-    monitor.run(config={"name": NAME, "prefix": "jcs-on-stage", "url": SHOW, "end": END, "format_alert": alert_body}, observer=observe, github=lambda: monitor.GitHub(STATE_PATH))
+    state = monitor.run(config={"name": NAME, "prefix": "jcs-on-stage", "url": SHOW, "end": END, "format_alert": alert_body}, observer=observe, github=lambda: monitor.GitHub(STATE_PATH))
+    if state and state.get("status") == "unknown":
+        raise SystemExit("JCS diagnostic failed: official stock was NOT verified; this monitor is not active")
 
 
 if __name__ == "__main__":
