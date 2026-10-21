@@ -81,3 +81,11 @@ test('a stopped newly added show also suppresses heartbeat and is named in the a
   const issue=f.calls.find(c=>c.url.endsWith('/issues'));
   assert.match(JSON.parse(issue.options.payload).body,/Suranne Jones/);
 });
+test('paused Woolf and unverified JCS do not mask alarms for active monitors',()=>{
+  const states=feeds(fresh);
+  states['virginia-woolf-state.json']={status:'paused'};
+  states['jcs-on-stage-state.json']={status:'unknown'};
+  const f=fixture(states); f.run('watchdog');
+  assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,1);
+  assert.equal(f.calls.filter(c=>/contents\/(virginia-woolf|jcs-on-stage)-state/.test(c.url)).length,0);
+});
