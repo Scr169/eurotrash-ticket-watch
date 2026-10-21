@@ -5,6 +5,7 @@ Chrome. Opens a ticket-area dialog only; never changes quantity, selects an
 actual ticket, updates a basket, logs in, or accepts a standing agreement.
 """
 import re
+import json
 import time
 from datetime import datetime
 
@@ -127,12 +128,13 @@ class LWBrowser(Browser):
             self.call(f"/session/{self.session}/url", "POST", {"url": CALENDAR})
         else:
             self.call(f"/session/{self.session}/back", "POST", {})
-        for _ in range(40):
+        for _ in range(80):
             data = self.script(CALENDAR_DOM)
             if data.get("slots") and "Jesus Christ Superstar" in data.get("title", ""):
                 self.reject_cookies()
                 return data
             time.sleep(.4)
+        print("LW load diagnostic:", json.dumps({"url": data.get("url"), "title": data.get("title"), "text": data.get("text", "")[:900]}, ensure_ascii=False))
         raise monitor.MonitorError("LW official calendar did not load; no CAPTCHA bypass")
 
     def read_stage(self, slot):
