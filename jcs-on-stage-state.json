@@ -1,0 +1,9 @@
+{
+  "last_attempt_at": "2026-10-21T22:34:01.376530+00:00",
+  "last_run_id": "39687373325",
+  "status": "unknown",
+  "consecutive_failures": 1,
+  "last_error": "LW official calendar did not load; no CAPTCHA bypass",
+  "last_heartbeat": "2026-10-21T22:34:01.376530+00:00",
+  "last_state_change": "2026-10-21T22:34:01.376530+00:00"
+}
