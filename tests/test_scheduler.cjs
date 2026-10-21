@@ -31,7 +31,7 @@ function fixture(states, dispatchCode=204) {
   return {data,calls,run:name=>vm.runInContext(name+'()',context)};
 }
 const fresh = {status:'sold_out',last_attempt_at:'2026-10-19T13:59:00Z',last_checked_at:'2026-10-19T13:59:02Z'};
-const feeds = golden=>({'monitor-state.json':fresh,'golden-boy-state.json':golden});
+const feeds = golden=>({'monitor-state.json':fresh,'golden-boy-state.json':golden,'an-oak-tree-state.json':fresh,'virginia-woolf-state.json':fresh,'jcs-on-stage-state.json':fresh});
 
 test('only actual fresh source reads for both productions produce a healthy heartbeat',()=>{
   const f=fixture(feeds(fresh)); f.run('watchdog'); f.run('watchdog');
@@ -44,6 +44,9 @@ test('one advancing checker cannot keep a stopped second production looking heal
   f.run('watchdog');
   assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,1);
   states['golden-boy-state.json']={...fresh,last_checked_at:'2026-10-19T14:00:00Z'};
+  states['an-oak-tree-state.json']={...fresh,last_checked_at:'2026-10-19T14:00:00Z'};
+  states['virginia-woolf-state.json']={...fresh,last_checked_at:'2026-10-19T14:00:00Z'};
+  states['jcs-on-stage-state.json']={...fresh,last_checked_at:'2026-10-19T14:00:00Z'};
   f.run('watchdog');
   assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,2);
 });
@@ -69,4 +72,12 @@ test('dispatch failure remains a failure and never refreshes a healthy heartbeat
   assert.equal(f.data.last_dispatch_at,undefined);
   assert.match(f.data.last_dispatch_error,/HTTP 403/);
   assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,0);
+});
+test('a stopped newly added show also suppresses heartbeat and is named in the alert',()=>{
+  const states=feeds(fresh);
+  states['an-oak-tree-state.json']={...fresh,last_attempt_at:'2026-10-19T13:00:00Z',last_checked_at:'2026-10-19T13:00:00Z'};
+  const f=fixture(states); f.run('watchdog');
+  assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,0);
+  const issue=f.calls.find(c=>c.url.endsWith('/issues'));
+  assert.match(JSON.parse(issue.options.payload).body,/Suranne Jones/);
 });
