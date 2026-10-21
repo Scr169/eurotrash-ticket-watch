@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Test both monitors
+      - name: Test theatre monitors
         run: |
           python3 -m unittest discover -s tests -v
           node --test tests/test_scheduler.cjs
@@ -49,3 +49,32 @@ jobs:
           TEST_NOTIFICATION: ${{ inputs.golden_boy_test_notification }}
           VERIFY_BOOKING_PROBE: ${{ inputs.golden_boy_test_notification }}
         run: xvfb-run -a python3 golden_boy.py
+      - name: Check Suranne Jones exact An Oak Tree performance
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_USER: ${{ github.repository_owner }}
+        run: python3 an_oak_tree.py
+      - name: Check official sohoplace Virginia Woolf full-run calendar
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_USER: ${{ github.repository_owner }}
+        run: xvfb-run -a python3 virginia_woolf.py
+
+  jcs:
+    # Separate job after the other shows: a slow LW booking site cannot
+    # consume their job timeout. Serial state writes avoid branch conflicts.
+    needs: check
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check each JCS 25 pound On-Stage Standing area through October 31
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_USER: ${{ github.repository_owner }}
+        run: xvfb-run -a python3 jcs_on_stage.py
