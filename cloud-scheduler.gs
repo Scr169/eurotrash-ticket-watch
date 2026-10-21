@@ -10,7 +10,10 @@ const ENDS_AT = '2027-01-10T00:00:00Z';
 const MAX_AGE_MS = 15 * 60 * 1000;
 const FEEDS = [
   {name:'Young Vic《Eurotrash》', path:'monitor-state.json', end:ENDS_AT},
-  {name:'Almeida《Golden Boy》', path:'golden-boy-state.json', end:'2026-11-01T00:00:00Z'}
+  {name:'Almeida《Golden Boy》', path:'golden-boy-state.json', end:'2026-11-01T00:00:00Z'},
+  {name:'The Other Palace《An Oak Tree》Suranne Jones', path:'an-oak-tree-state.json', end:'2026-11-15T15:00:00Z'},
+  {name:'@sohoplace《Who\'s Afraid of Virginia Woolf?》', path:'virginia-woolf-state.json', end:'2026-12-20T00:00:00Z'},
+  {name:'JCS £25 On-Stage Standing · 至10月31日', path:'jcs-on-stage-state.json', end:'2026-11-01T00:00:00Z'}
 ];
 
 function setup() {
@@ -71,12 +74,12 @@ function watchdog() {
   const installed = Date.parse(props.getProperty('installed_at') || '');
   if (stale.length && now.getTime() - installed > MAX_AGE_MS && !props.getProperty('stale_notice_sent')) {
     const episode = Number(props.getProperty('stale_episode') || 0) + 1;
-    notify_('【监控停跑，不是放票】两场戏查票超过15分钟未执行',
+    notify_('【监控停跑，不是放票】剧目查票超过15分钟未执行',
       '以下剧目已超过15分钟没有实际检查记录：' + stale.join('、') + '\n\n这不代表售罄，也不是放票通知。请暂时自行查看官网。\n\nhttps://github.com/' + REPOSITORY + '/actions',
       'scheduler-stale-' + episode);
     props.setProperties({stale_notice_sent:'true',stale_episode:String(episode)});
   } else if (!stale.length && props.getProperty('stale_notice_sent')) {
-    notify_('【监控恢复】两场戏云端检查已恢复', '已重新核对两场戏的实际检查时间。\n\nhttps://github.com/' + REPOSITORY + '/actions',
+    notify_('【监控恢复】剧目云端检查已恢复', '已重新核对所有仍在监控的剧目的实际检查时间。\n\nhttps://github.com/' + REPOSITORY + '/actions',
       'scheduler-recovered-' + props.getProperty('stale_episode'));
     props.deleteProperty('stale_notice_sent');
   }
@@ -132,7 +135,7 @@ function pingHealth_() {
   const ping = PropertiesService.getScriptProperties().getProperty('HC_PING_URL');
   if (!ping) return;
   if (!/^https:\/\/hc-ping\.com\/[a-f0-9-]{36}$/.test(ping)) throw new Error('Invalid private healthcheck URL');
-  const response = UrlFetchApp.fetch(ping,{method:'post',payload:'Both active official stock checks are fresh.',muteHttpExceptions:true});
+  const response = UrlFetchApp.fetch(ping,{method:'post',payload:'Every active theatre monitor has a new successful official stock check.',muteHttpExceptions:true});
   if (response.getResponseCode() !== 200) throw new Error('External healthcheck heartbeat failed');
   PropertiesService.getScriptProperties().setProperty('last_health_ping_at',new Date().toISOString());
 }
