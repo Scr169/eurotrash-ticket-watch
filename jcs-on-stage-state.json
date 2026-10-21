@@ -1,9 +1,9 @@
 {
-  "last_attempt_at": "2026-10-21T22:34:01.376530+00:00",
-  "last_run_id": "39687373325",
+  "last_attempt_at": "2026-10-21T22:37:40.100616+00:00",
+  "last_run_id": "39687801855",
   "status": "unknown",
-  "consecutive_failures": 1,
+  "consecutive_failures": 2,
   "last_error": "LW official calendar did not load; no CAPTCHA bypass",
   "last_heartbeat": "2026-10-21T22:34:01.376530+00:00",
-  "last_state_change": "2026-10-21T22:34:01.376530+00:00"
+  "last_state_change": "2026-10-21T22:37:40.100616+00:00"
 }
