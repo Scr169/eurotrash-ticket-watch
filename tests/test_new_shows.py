@@ -39,31 +39,67 @@ class OakTests(unittest.TestCase):
 
 
 def page(row):
-    return "<title>Who’s Afraid of Virginia Woolf?</title><script>const nlivenPerformances = " + json.dumps([row]) + "</script>"
+    return "<title>Who’s Afraid of Virginia Woolf?</title><script>const nlivenPerformances = " + json.dumps(row if isinstance(row, list) else [row]) + "</script>"
 
 
 class WoolfTests(unittest.TestCase):
     def test_official_zero_count_is_sold_out(self):
-        self.assertEqual(woolf.parse_calendar(page(ROW), NOW), {"total": 1, "candidates": []})
+        self.assertEqual(woolf.parse_calendar(page(ROW), WOOLF_NOW), {"total": 1, "candidates": []})
 
     def test_evergreen_ticket_link_cannot_be_inventory(self):
         with self.assertRaises(monitor.MonitorError):
-            woolf.parse_calendar("<title>Who's Afraid of Virginia Woolf?</title><a>Tickets from £40</a>", NOW)
+            woolf.parse_calendar("<title>Who's Afraid of Virginia Woolf?</title><a>Tickets from £40</a>", WOOLF_NOW)
 
     def test_member_link_and_wrong_production_are_rejected(self):
         for key, value in [("booking_url", ROW["booking_url"] + "?promo=WAC"), ("product_id", "other"), ("availability", "unknown")]:
             row = dict(ROW, **{key: value})
             with self.assertRaises(monitor.MonitorError):
-                woolf.parse_calendar(page(row), NOW)
+                woolf.parse_calendar(page(row), WOOLF_NOW)
 
-    def test_any_future_public_positive_count_is_candidate(self):
+    def test_only_today_public_positive_count_is_candidate(self):
         row = dict(ROW, availability="1")
-        result = woolf.parse_calendar(page(row), NOW)
+        result = woolf.parse_calendar(page(row), WOOLF_NOW)
         self.assertEqual(len(result["candidates"]), 1)
         self.assertEqual(result["candidates"][0]["url"], ROW["booking_url"])
 
+    def test_later_dates_and_already_started_shows_never_alert(self):
+        today = dict(ROW, availability="1")
+        tomorrow = dict(ROW, start_date_time="2026-10-23 19:00:00", availability="99")
+        self.assertEqual(len(woolf.parse_calendar(page([today, tomorrow]), WOOLF_NOW)["candidates"]), 1)
+        result = woolf.parse_calendar(page([today, tomorrow]), monitor.date("2026-10-22T18:00:00Z"))
+        self.assertEqual(result, {"total": 0, "candidates": []})
+
+    def test_today_uses_london_date_across_midnight(self):
+        # UTC is still 21 October; London has moved into 22 October.
+        result = woolf.parse_calendar(page(dict(ROW, availability="1")), monitor.date("2026-10-21T23:15:00Z"))
+        self.assertEqual(len(result["candidates"]), 1)
+
+    def test_clock_change_does_not_keep_a_fixed_summer_offset(self):
+        row = dict(ROW, start_date_time="2026-10-26 19:00:00", stop_selling_at="2026-10-26 18:00:00", availability="1")
+        # After the change London equals UTC: this is still 25 October.
+        self.assertEqual(woolf.parse_calendar(page(row), monitor.date("2026-10-25T23:30:00Z")), {"total": 0, "candidates": []})
+        self.assertEqual(len(woolf.parse_calendar(page(row), monitor.date("2026-10-26T00:00:00Z"))["candidates"]), 1)
+
+    def test_other_dates_inventory_is_not_inspected(self):
+        tomorrow = dict(ROW, start_date_time="2026-10-23 19:00:00", availability="not-read", booking_url="not-read")
+        self.assertEqual(woolf.parse_calendar(page([ROW, tomorrow]), WOOLF_NOW), {"total": 1, "candidates": []})
+
+    def test_no_performance_today_is_quiet_and_does_not_open_browser(self):
+        next_day = dict(ROW, start_date_time="2026-10-23 19:00:00", availability="1")
+        notices = []
+        with patch.object(woolf, "read_calendar", return_value=page(next_day)), patch.object(woolf, "SohoBrowser") as browser:
+            result = woolf.observe(WOOLF_NOW, on_candidates=notices.append)
+        self.assertEqual(result["total"], 0)
+        self.assertEqual(result["available"], [])
+        self.assertEqual(notices, [[]])
+        browser.assert_not_called()
+
+    def test_missing_calendar_is_failure_even_when_today_has_no_show(self):
+        with self.assertRaises(monitor.MonitorError):
+            woolf.parse_calendar(page([]), WOOLF_NOW)
+
     def test_actual_nliven_low_badge_with_sold_out_notice_is_not_a_ticket(self):
-        candidate = woolf.parse_calendar(page(dict(ROW, availability="1")), NOW)["candidates"][0]
+        candidate = woolf.parse_calendar(page(dict(ROW, availability="1")), WOOLF_NOW)["candidates"][0]
         data = {"url": candidate["url"], "heading": "Who’s Afraid of Virginia Woolf?", "selected": "Select event Who's Afraid Of Virginia Woolf? on 2026-10-22T19:00:00", "soldOut": True, "text": "Low Performance Sold Out", "seatCount": 0}
         self.assertIsNone(woolf.confirm_booking(candidate, data))
         data["soldOut"] = False
@@ -84,7 +120,7 @@ class WoolfTests(unittest.TestCase):
                 raise monitor.MonitorError("fixture blocked page")
         with patch.object(woolf, "read_calendar", return_value=page(dict(ROW, availability="1"))), patch.object(woolf, "SohoBrowser", FakeBrowser):
             with self.assertRaises(monitor.MonitorError):
-                woolf.observe(NOW, on_candidates=lambda items: calls.append("notice"))
+                woolf.observe(WOOLF_NOW, on_candidates=lambda items: calls.append("notice"))
         self.assertEqual(calls, ["notice", "browser"])
 
 
@@ -129,6 +165,7 @@ class JCSTests(unittest.TestCase):
             jcs.parse_calendar(data, NOW)
 
 NOW = monitor.date("2026-10-21T22:25:00Z")
+WOOLF_NOW = monitor.date("2026-10-22T00:15:00Z")
 EVENTS = json.loads('[{"description": "A rare chance to see the play that shaped a theatre landscape. When it opened in 2005 Tim Crouch’s An Oak Tree changed the rules of the game, bringing into the centre of its action an actor who has neither seen nor read the play.\\r\\nIn a performance of controlled virtuosity, the playwright guides that actor through a story of loss, suggestion and the power of the mind.\\r\\nNo two shows are the same. Each ‘vividly celebrates the live, raw, communal experience of theatre’ (Financial Times). This is an audience experience like no other.", "htmlDescription": "<div id>\\r\\n\\r\\n</div>", "duration": 75, "imageUrl": "https://system.spektrix.com/theotherpalace/files/9551e4c6-9d34-46af-bfbb-b06836535f20.jpg", "isOnSale": true, "name": "An Oak Tree", "instanceDates": "7 October-15 November", "thumbnailUrl": "https://system.spektrix.com/theotherpalace/files/9551e4c6-9d34-46af-bfbb-b06836535f20-thumbnail.jpg", "webUrl": "", "webEventId": "OAK26", "id": "104401ANKRNNLHCVDTNJGJHJRJPJMRLCG", "firstInstanceDateTime": "2026-10-07T19:00:00", "firstInstanceDateTimeUtc": "2026-10-07T18:00:00Z", "lastInstanceDateTime": "2026-11-15T15:00:00", "lastInstanceDateTimeUtc": "2026-11-15T15:00:00Z", "altText": "a man\'s face partially obscured by a glass of water", "attribute_Age": "12+", "attribute_DontIncludeOnWhatsOn": false, "attribute_ThirdPartyListings": false, "attribute_Ticketsforgoodevent": false, "attribute_Venue": "Main House"}]')
 INSTANCES = json.loads('[{"isOnSale": true, "planId": "4801ANHPDLLRCQPPBDBQTRQJMPNKSLKPJ", "priceList": {"id": "259401AJLBRVRQLQSBCNPSGRKJHSTSMBM"}, "event": {"id": "104401ANKRNNLHCVDTNJGJHJRJPJMRLCG"}, "start": "2026-11-15T15:00:00", "startUtc": "2026-11-15T15:00:00", "startSellingAtWeb": "2026-07-15T16:00:00", "startSellingAtWebUtc": "2026-07-15T15:00:00Z", "stopSellingAtWeb": "2026-11-15T14:30:00", "stopSellingAtWebUtc": "2026-11-15T14:30:00Z", "webInstanceId": null, "cancelled": false, "id": "240703ASRQGGVGGHTHTRHBRGMPRRGJRMH", "hasBestAvailableOverlay": false, "attribute_AudioDescribedPerformance": false, "attribute_CaptionedPerformance": false, "attribute_PostShowQAndASession": false, "attribute_PreShowDragPerformance": false, "attribute_RelaxedPerformance": false, "attribute_SignedPerformance": false, "attribute_SingalongPerformance": false, "attribute_Ticketsforgoodinstance": false, "attribute_UnderstudyPerformance": false}]')
 INVENTORY = json.loads('{"data": [{"eventInstanceId": "240703ASRQGGVGGHTHTRHBRGMPRRGJRMH", "start": "2026-11-15T15:00:00", "startUtc": "2026-11-15T15:00:00Z", "capacity": 307, "startSellingForCustomer": "2026-07-15T16:00:00", "startSellingForCustomerUtc": "2026-07-15T15:00:00Z", "availability": [{"priceBand": "401ANPJQJQPQMRSBDNMVNLSPGTRBVQVRH", "status": "Available", "count": 0, "ticketTypes": []}, {"priceBand": "201AGBHDRLQHNHPHKKMPKLGPMDRDTDMVL", "status": "Available", "count": 0, "ticketTypes": []}, {"priceBand": "402AJKCLLRDNMBKMHTCGLBDHJTBPJBDNV", "status": "Available", "count": 0, "ticketTypes": []}]}]}')

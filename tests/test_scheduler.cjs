@@ -81,11 +81,25 @@ test('a stopped newly added show also suppresses heartbeat and is named in the a
   const issue=f.calls.find(c=>c.url.endsWith('/issues'));
   assert.match(JSON.parse(issue.options.payload).body,/Suranne Jones/);
 });
-test('paused Woolf and unverified JCS do not mask alarms for active monitors',()=>{
+test('unverified JCS is excluded while the resumed Woolf feed is required',()=>{
   const states=feeds(fresh);
-  states['virginia-woolf-state.json']={status:'paused'};
   states['jcs-on-stage-state.json']={status:'unknown'};
   const f=fixture(states); f.run('watchdog');
   assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,1);
-  assert.equal(f.calls.filter(c=>/contents\/(virginia-woolf|jcs-on-stage)-state/.test(c.url)).length,0);
+  assert.equal(f.calls.filter(c=>/contents\/jcs-on-stage-state/.test(c.url)).length,0);
+  assert.equal(f.calls.filter(c=>/contents\/virginia-woolf-state/.test(c.url)).length,1);
+});
+test('today-only Woolf may have no remaining shows and still produce a healthy read',()=>{
+  const states=feeds(fresh);
+  states['virginia-woolf-state.json']={...fresh,status:'no_performances_today',scope:'london_today_only'};
+  const f=fixture(states); f.run('watchdog');
+  assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,1);
+});
+test('a paused or failed Woolf source cannot keep the four-source watchdog healthy',()=>{
+  for(const status of ['paused','unknown']){
+    const states=feeds(fresh);
+    states['virginia-woolf-state.json']={...fresh,status};
+    const f=fixture(states); f.run('watchdog');
+    assert.equal(f.calls.filter(c=>c.url.startsWith('https://hc-ping.com/')).length,0);
+  }
 });

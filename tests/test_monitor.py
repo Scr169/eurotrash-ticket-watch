@@ -154,6 +154,19 @@ class StateTransitions(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self.assertEqual(self.saved["status"], "sold_out")
 
+    def test_same_day_monitor_records_no_remaining_shows_as_healthy_and_quiet(self):
+        self.saved.update(status="paused", paused_at="yesterday", pause_reason="old request")
+        def observer(now, on_candidates):
+            on_candidates([])
+            return {"total": 0, "source": "official_today_fixture", "available": []}
+        monitor.run(config={"scope": "london_today_only", "empty_status": "no_performances_today"}, observer=observer)
+        self.assertEqual(self.saved["status"], "no_performances_today")
+        self.assertEqual(self.saved["scope_date"], "2026-10-18")
+        self.assertEqual(self.saved["performance_count"], 0)
+        self.assertEqual(self.saved["last_checked_at"], NOW.isoformat())
+        self.assertNotIn("pause_reason", self.saved)
+        self.assertEqual(self.sent, [])
+
     def test_successful_checks_record_real_freshness_and_failure_does_not(self):
         self.tick()
         self.assertEqual(self.saved["last_checked_at"], NOW.isoformat())
