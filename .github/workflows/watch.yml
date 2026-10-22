@@ -1,4 +1,4 @@
-name: Theatre ticket watch
+name: ticket watch
 
 on:
   schedule:
