@@ -1,7 +1,7 @@
 {
-  "last_attempt_at": "2026-10-22T03:12:29.712984+00:00",
-  "last_run_id": "39715544144",
-  "last_source_read_at": "2026-10-22T03:12:29.712984+00:00",
+  "last_attempt_at": "2026-10-22T03:18:05.755906+00:00",
+  "last_run_id": "39716029967",
+  "last_source_read_at": "2026-10-22T03:18:05.755906+00:00",
   "candidate_notified_keys": [],
   "current_candidate_count": 0,
   "status": "sold_out",
@@ -10,10 +10,10 @@
   "failure_notice_sent": false,
   "last_error": null,
   "performance_count": 1,
-  "last_checked_at": "2026-10-22T03:12:30.306792+00:00",
-  "check_count": 41,
+  "last_checked_at": "2026-10-22T03:18:06.828497+00:00",
+  "check_count": 42,
   "last_heartbeat": "2026-10-21T22:33:52.982651+00:00",
-  "last_state_change": "2026-10-22T03:12:29.712984+00:00",
+  "last_state_change": "2026-10-22T03:18:05.755906+00:00",
   "scope": "london_today_only",
   "scope_date": "2026-10-22"
 }
