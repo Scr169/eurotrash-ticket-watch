@@ -237,6 +237,8 @@ def run(*, config=None, observer=None, github=None):
     notification_error = None
     state["last_attempt_at"] = stamp
     state["last_run_id"] = os.environ.get("GITHUB_RUN_ID")
+    if config.get("scope") == "london_today_only":
+        state.update(scope="london_today_only", scope_date=now.astimezone(LONDON).date().isoformat())
 
     def publish_candidates(candidates):
         # Authorized on 19 October: send the early signal before slow browser
@@ -269,7 +271,11 @@ def run(*, config=None, observer=None, github=None):
             state["episode"] = int(episode)
         if state.get("failure_notice_sent"):
             gh.notify("【监控恢复】" + name + " 云端查票恢复", f"已重新读取 {name} 官方的 {observation['total']} 场未来演出。\n\n{show_url}", prefix + "-recovery-" + str(state.get("failure_episode", 0)))
-        state.update(status="available" if items else "sold_out", notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
+        empty_status = "no_performances_today" if observation["total"] == 0 and config.get("empty_status") == "no_performances_today" else "sold_out"
+        state.update(status="available" if items else empty_status, notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
+        if config.get("scope") == "london_today_only":
+            state.pop("paused_at", None)
+            state.pop("pause_reason", None)
         state["last_checked_at"] = datetime.now(timezone.utc).isoformat()
         state["check_count"] = state.get("check_count", 0) + 1
         print(json.dumps({"checked_at": stamp, "source": observation["source"], "performances": observation["total"], "confirmed_available_performances": len(items), "status": state["status"]}))

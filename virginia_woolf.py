@@ -1,4 +1,4 @@
-"""Read @sohoplace's official full-run calendar; verify positive links in Chrome.
+"""Read the official calendar, monitor only today's remaining London shows.
 
 The HTML's nlivenPerformances array is the data used by its visible calendar.
 The nLiven series calendar's generic Low badge also appears on sold-out events,
@@ -18,7 +18,7 @@ from golden_boy import Browser
 SHOW = "https://sohoplace.org/shows/whos-afraid-of-virginia-woolf-2026/"
 STATE_PATH = "virginia-woolf-state.json"
 END = datetime(2026, 12, 20, tzinfo=monitor.LONDON)
-NAME = "@sohoplace《Who's Afraid of Virginia Woolf?》"
+NAME = "@sohoplace《Who's Afraid of Virginia Woolf?》仅当天"
 
 
 class Scripts(HTMLParser):
@@ -59,14 +59,19 @@ def parse_calendar(html, now):
             arrays.append(value)
     if len(arrays) != 1 or not isinstance(arrays[0], list) or not arrays[0]:
         raise monitor.MonitorError("Full-run official calendar missing or ambiguous")
+    today = now.astimezone(monitor.LONDON).date()
     total, candidates, seen = 0, [], set()
     for row in arrays[0]:
         if not isinstance(row, dict) or row.get("product_id") != "23934" or normalise_title(row.get("name", "")) != "whosafraidofvirginiawoolf":
             raise monitor.MonitorError("Calendar contains another production")
-        start = monitor.date(row.get("start_date_time"))
+        start = monitor.date(row.get("start_date_time")).astimezone(monitor.LONDON)
         if start.isoformat() in seen:
             raise monitor.MonitorError("Duplicate performance date")
         seen.add(start.isoformat())
+        # Never inspect later dates' inventory or open their booking pages.
+        # London midnight and the October clock change follow ZoneInfo.
+        if start.date() != today or not now < start < END:
+            continue
         url = row.get("booking_url", "")
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.netloc != "ticketing.sohoplace.org" or parsed.query or not re.fullmatch(r"/(?:shop/)?tickets/series/SPVWF01M/whos-afraid-of-virginia-woolf-" + re.escape(str(row.get("performance_id", ""))), parsed.path):
@@ -74,15 +79,13 @@ def parse_calendar(html, now):
         raw_count = row.get("availability")
         if not isinstance(raw_count, str) or not re.fullmatch(r"\d+", raw_count):
             raise monitor.MonitorError("No explicit official availability count")
-        if not now < start < END:
-            continue
         total += 1
         if not monitor.date(row.get("start_selling_at")) <= now < monitor.date(row.get("stop_selling_at")):
             continue
         if int(raw_count) and not monitor.restricted(row.get("description", "")):
             candidates.append({"key": start.isoformat() + "|" + url, "url": url, "start": start.isoformat(), "when": start.strftime("%Y-%m-%d %H:%M")})
-    if not total:
-        raise monitor.MonitorError("No future Virginia Woolf performances returned")
+    # A valid full calendar with no remaining performance today is normal,
+    # including Sundays and after the evening show has started.
     return {"total": total, "candidates": candidates}
 
 
@@ -144,18 +147,18 @@ def observe(now, on_candidates=None):
                 item = confirm_booking(candidate, browser.read(candidate))
                 if item:
                     available.append(item)
-    return {"total": result["total"], "available": available, "source": "official_sohoplace_full_run_calendar_and_booking_page"}
+    return {"total": result["total"], "available": available, "source": "official_sohoplace_london_today_only_calendar_and_booking_page"}
 
 
 def alert_body(items, now):
     lines = [NAME + " 官方售票页已确认公开可选座位。", "", f"核验时间：{now.astimezone(monitor.LONDON):%Y-%m-%d %H:%M:%S}（伦敦时间）"]
     lines += [f"\n- **{item['when']}（伦敦时间）**：至少 1 张普通公开可选票；[官方购票页]({item['url']})" for item in items]
-    lines += ["", "票价未知，请在售票页核对。余票随时可能售出。监控不占座、不加购物车、不购买。"]
+    lines += ["", "仅监控伦敦当天尚未开演的场次。票价未知，请在售票页核对。余票随时可能售出。监控不占座、不加购物车、不购买。"]
     return "\n".join(lines)
 
 
 def run():
-    monitor.run(config={"name": NAME, "prefix": "virginia-woolf", "url": SHOW, "end": END, "format_alert": alert_body}, observer=observe, github=lambda: monitor.GitHub(STATE_PATH))
+    monitor.run(config={"name": NAME, "prefix": "virginia-woolf", "url": SHOW, "end": END, "format_alert": alert_body, "scope": "london_today_only", "empty_status": "no_performances_today"}, observer=observe, github=lambda: monitor.GitHub(STATE_PATH))
 
 
 if __name__ == "__main__":
