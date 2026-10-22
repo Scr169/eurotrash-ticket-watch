@@ -198,7 +198,9 @@ class GitHub:
         for issue in self.call("/issues?state=all&per_page=100&sort=created&direction=desc"):
             if marker in (issue.get("body") or ""):
                 return issue["html_url"]
-        result = self.call("/issues", "POST", {"title": title, "body": f"@{self.owner}\n\n{body}\n\n<!-- {marker} -->"})
+        # Put the recognisable show first in the email preview as well.
+        lead = title.split("｜", 1)[0]
+        result = self.call("/issues", "POST", {"title": title, "body": f"{lead}\n\n{body}\n\n@{self.owner}\n\n<!-- {marker} -->"})
         if not result.get("id"):
             raise MonitorError("GitHub did not acknowledge the alert")
         return result["html_url"]
@@ -223,6 +225,10 @@ def run(*, config=None, observer=None, github=None):
     config = config or {}
     name = config.get("name", "Young Vic《Eurotrash》")
     prefix = config.get("prefix", "eurotrash")
+    subject_name = {"eurotrash": "Eurotrash", "golden-boy": "Golden Boy",
+                    "an-oak-tree": "An Oak Tree（Suranne Jones）",
+                    "virginia-woolf": "Virginia Woolf（仅当天）",
+                    "jcs-on-stage": "Jesus Christ Superstar（£25舞台站票）"}.get(prefix, name)
     show_url = config.get("url", SHOW)
     end = config.get("end", END)
     format_alert = config.get("format_alert", alert_body)
@@ -249,14 +255,14 @@ def run(*, config=None, observer=None, github=None):
         if fresh:
             episode = state.get("candidate_episode", 0) + 1
             fingerprint = hashlib.sha256(json.dumps([i["key"] for i in fresh], sort_keys=True).encode()).hexdigest()[:20]
-            url = gh.notify("【购票入口变化，余票待核实】" + name, candidate_body(name, fresh, now), prefix + "-candidate-" + str(episode) + "-" + fingerprint)
+            url = gh.notify(subject_name + "｜购票入口变化，余票待核实", candidate_body(subject_name, fresh, now), prefix + "-candidate-" + str(episode) + "-" + fingerprint)
             print("Early booking signal acknowledged:", url)
             state["candidate_episode"] = episode
         state["candidate_notified_keys"] = [item["key"] for item in candidates]
         state["current_candidate_count"] = len(candidates)
     if os.environ.get("TEST_NOTIFICATION", "").lower() == "true":
         marker = prefix + "-setup-test-" + os.environ.get("GITHUB_RUN_ID", stamp)
-        url = gh.notify("【测试，不是放票】" + name + " 云端通知测试", "这是 GitHub 云端监控发出的连接测试。**这不代表现在有票，也不代表查票链路已经通过验证。**\n\n监控对象：" + name + "\n\n" + show_url + "\n\n若你收到这封邮件，邮件通知链路已连通。手机可开启 GitHub Mobile 的 Mentions 推送，或 Gmail 新邮件通知。", marker)
+        url = gh.notify(subject_name + "｜测试通知（不是放票）", "这是 GitHub 云端监控发出的连接测试。**这不代表现在有票，也不代表查票链路已经通过验证。**\n\n监控对象：" + name + "\n\n" + show_url + "\n\n若你收到这封邮件，邮件通知链路已连通。手机可开启 GitHub Mobile 的 Mentions 推送，或 Gmail 新邮件通知。", marker)
         print("Test notification created:", url)
     try:
         observation = (observer or observe)(now, on_candidates=publish_candidates)
@@ -266,11 +272,11 @@ def run(*, config=None, observer=None, github=None):
         if fresh:
             fingerprint = hashlib.sha256(json.dumps([i["key"] for i in fresh], sort_keys=True).encode()).hexdigest()[:20]
             episode = str(state.get("episode", 0) + 1)
-            url = gh.notify("【放票提醒】" + name + "有票了", format_alert(fresh, now), prefix + "-availability-" + episode + "-" + fingerprint)
+            url = gh.notify(subject_name + "｜有票了", format_alert(fresh, now), prefix + "-availability-" + episode + "-" + fingerprint)
             print("Availability notification acknowledged:", url)
             state["episode"] = int(episode)
         if state.get("failure_notice_sent"):
-            gh.notify("【监控恢复】" + name + " 云端查票恢复", f"已重新读取 {name} 官方的 {observation['total']} 场未来演出。\n\n{show_url}", prefix + "-recovery-" + str(state.get("failure_episode", 0)))
+            gh.notify(subject_name + "｜监控恢复", f"已重新读取 {name} 官方的 {observation['total']} 场未来演出。\n\n{show_url}", prefix + "-recovery-" + str(state.get("failure_episode", 0)))
         empty_status = "no_performances_today" if observation["total"] == 0 and config.get("empty_status") == "no_performances_today" else "sold_out"
         state.update(status="available" if items else empty_status, notified_keys=[item["key"] for item in items], consecutive_failures=0, failure_notice_sent=False, last_error=None, performance_count=observation["total"])
         if config.get("scope") == "london_today_only":
@@ -286,7 +292,7 @@ def run(*, config=None, observer=None, github=None):
         if count >= 3 and not state.get("failure_notice_sent"):
             episode = state.get("failure_episode", 0) + 1
             try:
-                gh.notify("【监控异常，不是放票】" + name + " 连续读取失败", f"已连续 {count} 次无法核实官方余票，不能确认售罄或有票。\n\n错误：{str(exc)[:300]}\n\n请查看 [本次云端运行]({os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{gh.repo}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')})。\n\n{show_url}", prefix + "-failure-" + str(episode))
+                gh.notify(subject_name + "｜监控异常（不是放票）", f"已连续 {count} 次无法核实官方余票，不能确认售罄或有票。\n\n错误：{str(exc)[:300]}\n\n请查看 [本次云端运行]({os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{gh.repo}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')})。\n\n{show_url}", prefix + "-failure-" + str(episode))
                 state.update(failure_notice_sent=True, failure_episode=episode)
             except Exception as alert_exc:
                 # Preserve the read-failure count even when notification itself

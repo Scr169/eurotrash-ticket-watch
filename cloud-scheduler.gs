@@ -80,12 +80,13 @@ function watchdog() {
   const installed = Date.parse(props.getProperty('installed_at') || '');
   if (stale.length && now.getTime() - installed > MAX_AGE_MS && !props.getProperty('stale_notice_sent')) {
     const episode = Number(props.getProperty('stale_episode') || 0) + 1;
-    notify_('【监控停跑，不是放票】剧目查票超过15分钟未执行',
+    const names = stale.map(name => (name.match(/《([^》]+)》/) || [null,name])[1]).join('、');
+    notify_(names + '｜监控停跑（不是放票）',
       '以下剧目已超过15分钟没有实际检查记录：' + stale.join('、') + '\n\n这不代表售罄，也不是放票通知。请暂时自行查看官网。\n\nhttps://github.com/' + REPOSITORY + '/actions',
       'scheduler-stale-' + episode);
     props.setProperties({stale_notice_sent:'true',stale_episode:String(episode)});
   } else if (!stale.length && props.getProperty('stale_notice_sent')) {
-    notify_('【监控恢复】剧目云端检查已恢复', '已重新核对所有仍在监控的剧目的实际检查时间。\n\nhttps://github.com/' + REPOSITORY + '/actions',
+    notify_('ticket watch｜监控恢复', '已重新核对所有仍在监控的剧目的实际检查时间。\n\nhttps://github.com/' + REPOSITORY + '/actions',
       'scheduler-recovered-' + props.getProperty('stale_episode'));
     props.deleteProperty('stale_notice_sent');
   }
@@ -133,7 +134,7 @@ function github_(path, method, body) {
 function notify_(title, body, marker) {
   const issues = github_('/issues?state=all&per_page=100&sort=created&direction=desc');
   if (issues.some(i=>(i.body || '').includes('<!-- ' + marker + ' -->'))) return;
-  const result = github_('/issues','post',{title:title,body:'@Scr169\n\n' + body + '\n\n<!-- ' + marker + ' -->'});
+  const result = github_('/issues','post',{title:title,body:title.split('｜')[0] + '\n\n' + body + '\n\n@Scr169\n\n<!-- ' + marker + ' -->'});
   if (!result || !result.id) throw new Error('GitHub did not acknowledge watchdog alert');
 }
 

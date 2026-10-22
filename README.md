@@ -1,4 +1,4 @@
-# 剧院免费云端放票提醒
+# ticket watch
 
 正式监控 **Eurotrash、Golden Boy、An Oak Tree（Suranne Jones指定场）、Virginia Woolf（仅伦敦当天）** 的官方票源。Virginia Woolf于2026-10-22按用户要求恢复为当天模式；JCS云端未启用，本地定时任务也已因用户担心Codex额度而暂停。电脑可以关机。只提醒，不登录剧院、不占座、不加购物车、不购买。
 
@@ -25,6 +25,8 @@ Eurotrash 官网曾展示 58 项，公开 API 返回 55 场。未返回项包括
 Golden Boy 官方日历表单与脚本使用 WordPress event 11278，官方售票 production 为 8745。2026-10-19 捕捉到 10 月 24 日 14:00 的 Book Tickets / Limited availability，并邮件提前提醒；打开售票页时明确显示 Sold Out，没有宣称确认有票。真实开放按钮内多出的辅助 time 标签已加入回归测试，日期只采用带 datetime 的场次时间。
 
 ## 两级提醒与去重
+
+邮件标题和预览先显示剧目名，例如 `Eurotrash｜有票了`、`Golden Boy｜购票入口变化，余票待核实`、`An Oak Tree（Suranne Jones）｜有票了`、`Virginia Woolf（仅当天）｜有票了`。GitHub通知邮件会另加仓库前缀。异常、恢复和测试通知也采用剧名在前的格式。
 
 1. **【购票入口变化，余票待核实】**：官方场次出现公开购票链接或票源正向信号就先提醒，随后继续核验。价格和实际余票未确认时明确说明。
 2. **【放票提醒】有票了**：再次验证至少一张普通公开可选票/座位后补发确认。只有入口按钮不够；会员、邀请或 Access 专属库存不算普通公开票。Audio Described 或 Relaxed 场次本身不等于专属票。
