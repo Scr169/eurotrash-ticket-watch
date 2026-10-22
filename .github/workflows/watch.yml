@@ -59,7 +59,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NOTIFY_USER: ${{ github.repository_owner }}
         run: python3 an_oak_tree.py
-      # Virginia Woolf paused at the user's request on 21 October 2026.
+      - name: Check Virginia Woolf London today only
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTIFY_USER: ${{ github.repository_owner }}
+        run: xvfb-run -a python3 virginia_woolf.py
 
   jcs:
     # Separate job after the other shows: a slow LW booking site cannot
