@@ -1,5 +1,7 @@
 # ticket watch
 
+仓库：[Scr169/sissi-ticket-watch](https://github.com/Scr169/sissi-ticket-watch)。
+
 正式监控 **Eurotrash、Golden Boy、An Oak Tree（Suranne Jones指定场）、Virginia Woolf（仅伦敦当天）** 的官方票源。Virginia Woolf于2026-10-22按用户要求恢复为当天模式；JCS云端未启用，本地定时任务也已因用户担心Codex额度而暂停。电脑可以关机。只提醒，不登录剧院、不占座、不加购物车、不购买。
 
 ## 独立调度与停跑告警

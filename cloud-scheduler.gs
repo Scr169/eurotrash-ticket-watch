@@ -4,7 +4,7 @@
  * The actual stock checks still run against the official theatre sources in
  * GitHub Actions, including the normal Chrome confirmation for Golden Boy.
  */
-const REPOSITORY = 'Scr169/eurotrash-ticket-watch';
+const REPOSITORY = 'Scr169/sissi-ticket-watch';
 const WORKFLOW = 'watch.yml';
 const ENDS_AT = '2027-01-10T00:00:00Z';
 const MAX_AGE_MS = 15 * 60 * 1000;
