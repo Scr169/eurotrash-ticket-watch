@@ -1,19 +1,23 @@
 {
-  "status": "sold_out",
+  "status": "available",
   "consecutive_failures": 0,
   "last_error": null,
   "last_heartbeat": "2026-10-18T01:42:45.005455+00:00",
-  "last_state_change": "2026-10-23T09:12:23.420313+00:00",
-  "notified_keys": [],
+  "last_state_change": "2026-10-23T09:17:23.029199+00:00",
+  "notified_keys": [
+    "2026-11-14T19:30:00+00:00|https://book.youngvic.org/youngvic/website/ChooseSeats.aspx?EventInstanceId=50601&resize=true"
+  ],
   "failure_notice_sent": false,
   "performance_count": 55,
-  "last_attempt_at": "2026-10-23T09:12:23.420313+00:00",
-  "last_run_id": "39930155841",
-  "last_source_read_at": "2026-10-23T09:12:23.420313+00:00",
-  "candidate_notified_keys": [],
-  "current_candidate_count": 0,
-  "last_checked_at": "2026-10-23T09:12:25.269328+00:00",
-  "check_count": 1120,
-  "candidate_episode": 10,
-  "episode": 10
+  "last_attempt_at": "2026-10-23T09:17:23.029199+00:00",
+  "last_run_id": "39930763600",
+  "last_source_read_at": "2026-10-23T09:17:23.029199+00:00",
+  "candidate_notified_keys": [
+    "2026-11-14T19:30:00+00:00|https://book.youngvic.org/youngvic/website/ChooseSeats.aspx?EventInstanceId=50601&resize=true"
+  ],
+  "current_candidate_count": 1,
+  "last_checked_at": "2026-10-23T09:17:27.818309+00:00",
+  "check_count": 1121,
+  "candidate_episode": 11,
+  "episode": 11
 }
